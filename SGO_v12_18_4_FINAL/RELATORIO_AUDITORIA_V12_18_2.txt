@@ -1,0 +1,20 @@
+AUDITORIA SGO v12.18.2
+
+BASE
+SGO v12.18.1.
+
+ACHADO
+O dock do cronômetro seleciona qualquer tarefa cronometrada do usuário que não esteja concluída/cancelada. Portanto uma tarefa PAUSADA já materializada pode reaparecer após recarga. Limpar cookies não garante a limpeza de localStorage/IndexedDB e, principalmente, não altera o registro oficial no servidor. A limpeza de fila v12.18.1 atua sobre operações pendentes, não sobre a tarefa oficial.
+
+CORREÇÃO
+[OK] Botão Descartar adicionado às ações do cronômetro.
+[OK] Endpoint direto abandonTimedTaskServer exposto no gateway.
+[OK] Cancelamento oficial usa o registro atual do servidor e preserva histórico.
+[OK] timeTracking se torna terminal pelo fluxo de status Cancelada já existente no backend.
+[OK] Tombstone por taskId/usuário bloqueia operações antigas do timer.
+[OK] CREATE tardia de tarefa apenas local é neutralizada.
+[OK] Repetição do descarte é idempotente.
+[OK] Operações locais relacionadas podem ser descartadas coordenadamente.
+[OK] Proteções v12.18 e v12.18.1 preservadas.
+[OK] Sintaxe dos .gs e frontend montado validada.
+[OK] Suíte completa aprovada.

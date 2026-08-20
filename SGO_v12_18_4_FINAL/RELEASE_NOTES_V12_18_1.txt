@@ -1,0 +1,66 @@
+SGO v12.18.1 — fila sem bloqueio por dependência + limpeza coordenada do dispositivo
+Data: 2026-08-13
+
+OBJETIVO
+Corrigir o head-of-line blocking observado em produção na v12.18.0 e permitir que um computador com fila histórica corrompida/obsoleta descarte conscientemente as alterações pendentes sem que operações já aceitas pelo servidor reapareçam depois.
+
+ALTERAÇÕES PRINCIPAIS
+1. Worker da fila agora é dependency-aware:
+   - lê os status da fila em um único snapshot;
+   - operações RECEIVED com dependência ainda ativa não ocupam as 10 vagas do worker;
+   - o worker continua procurando operações independentes executáveis;
+   - conflito/rejeição da dependência continua sendo processado para terminalizar a cadeia.
+
+2. Polling do navegador respeita dependências:
+   - waitingDependency=true não gera mais processTaskOperationQueueServer em loop;
+   - quando a dependência passa a terminal, o cliente pode dar um único kick;
+   - operação RECEIVED sem dependência só recebe novo kick após 60 s;
+   - consultas de status usam pollAttempts e não inflam artificialmente attempts.
+
+3. Limpar fila antiga deste dispositivo:
+   - botão disponível dentro do painel da fila para qualquer usuário;
+   - exibe contagem de operações/tarefas/cronômetros/conflitos antes do descarte;
+   - baixa automaticamente um backup JSON da fila descartada;
+   - registra no servidor os operationIds abandonados;
+   - remove a fila somente do usuário atual naquele navegador;
+   - usa reset epoch + tombstones para impedir ressurreição por IndexedDB/outra aba;
+   - reaplica o estado oficial conhecido e força sincronização completa.
+
+4. Descarte coordenado no servidor:
+   - USER_DISCARDED_PENDING_OPERATION é terminal;
+   - o descarte é validado pelo usuário proprietário da operação;
+   - a intenção de descarte fica durável em ScriptProperties;
+   - é verificada antes da dependência e novamente após o claim, antes da mutação;
+   - uma operação que já estiver efetivamente PROCESSING não é sobrescrita à força; se já tiver sido aplicada, a sincronização oficial a trará de volta.
+
+5. Correção importante descoberta na revisão:
+   - acceptTaskOperationBatchServer existia na v12.18.0, mas não estava roteado no V12_RpcGateway.gs;
+   - a v12.18.1 adiciona o endpoint ao gateway, então a aceitação em lote do cronômetro passa a ser realmente acessível pelo Web App;
+   - o novo discardPendingClientOperationsServer também foi adicionado ao gateway.
+
+6. Diagnóstico ampliado:
+   - receivedReady / receivedBlocked;
+   - oldestBlockedAgeMs;
+   - amostras das dependências bloqueadas;
+   - contagem ativa por usuário;
+   - tabId no snapshot do navegador;
+   - queueSummary local;
+   - waitingDependency / dependsOnOperationId / pollAttempts por operação.
+
+SEGURANÇA DA LIMPEZA
+- NÃO apaga tarefa já salva no servidor.
+- Descarta alterações pendentes que ainda pertencem à fila do dispositivo.
+- Antes da limpeza, um JSON de backup é baixado automaticamente.
+- Se uma operação já estava em processamento no instante da limpeza, ela pode ter sido aplicada; o full sync reconcilia o estado oficial.
+
+ARQUIVOS DE PRODUÇÃO ALTERADOS
+- Code.gs
+- Index.html
+- V12_Diagnostics.gs
+- V12_RpcGateway.gs
+- V12_SecuritySync.gs
+- V12_TaskOperations.gs
+- V12_TimerDaily.gs
+
+FINALIZADOR
+Execute finalizeV12181Deployment() antes de publicar.

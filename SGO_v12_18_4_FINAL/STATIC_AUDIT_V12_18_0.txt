@@ -1,0 +1,14 @@
+SGO v12.18.0 — ARQUIVOS DE PRODUÇÃO ALTERADOS EM RELAÇÃO À v12.17.0
+CHANGED Code.gs
+CHANGED Index.html
+UNCHANGED V10_Communication.gs
+UNCHANGED V10_Core.html
+UNCHANGED V10_Database.gs
+UNCHANGED V10_Styles.html
+UNCHANGED V12_Communication.gs
+CHANGED V12_Diagnostics.gs
+UNCHANGED V12_RpcGateway.gs
+CHANGED V12_SecuritySync.gs
+CHANGED V12_TaskOperations.gs
+CHANGED V12_TimerDaily.gs
+UNCHANGED appsscript.json

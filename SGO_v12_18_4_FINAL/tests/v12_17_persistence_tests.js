@@ -1,0 +1,61 @@
+'use strict';
+const fs=require('fs'),path=require('path'),assert=require('assert');
+const root=path.resolve(__dirname,'..');
+const html=fs.readFileSync(path.join(root,'Index.html'),'utf8');
+const task=fs.readFileSync(path.join(root,'V12_TaskOperations.gs'),'utf8');
+const db=fs.readFileSync(path.join(root,'V10_Database.gs'),'utf8');
+const sec=fs.readFileSync(path.join(root,'V12_SecuritySync.gs'),'utf8');
+const daily=fs.readFileSync(path.join(root,'V12_TimerDaily.gs'),'utf8');
+const diag=fs.readFileSync(path.join(root,'V12_Diagnostics.gs'),'utf8');
+let tests=0; const ok=(v,m)=>{assert(v,m);tests++;};
+
+ok(html.includes('>v12.18.3</span>'),'v12.17 badge missing');
+ok(html.includes('var QUEUE_SCHEMA_VERSION = 10;'),'outbox schema was not advanced for v12.18 anti-duplication migration');
+ok(html.includes('function timerV1217PendingLocalCreate'),'timer local-create compaction helper missing');
+ok(html.includes("timerCompactedAction=action"),'timer CREATE + later action is not coalesced');
+ok(html.includes('dependsOnOperationId:dependsOnOperationId'),'client timer dependency is not persisted');
+ok(html.includes('queueCanPreAcceptDependencyV1217'),'dependent timer operation cannot be accepted early');
+ok(html.includes("other.status !== 'conflict'"),'conflicts can incorrectly be bypassed by pre-accept');
+ok(html.includes('function queueRepairTimerChainsV1217_'),'existing browser timer queue repair missing');
+ok(html.includes("v128DiagEvent('INFO','timer','TIMER_QUEUE_REPAIRED'"),'timer queue repair is not observable');
+ok(html.includes("sorted[i].kind==='task' && !sorted[i].serverAccepted"),'unaccepted task operations are not prioritized for server durability');
+ok(html.includes('function queueHasUnacceptedDependentV1217'),'timer chain pre-accept helper missing');
+ok(html.includes('TIMER_CHAIN_PREACCEPTED'),'timer chain is not made durable before processing predecessor');
+ok(html.includes('__preAcceptedChain:true') && html.includes('result.__preAcceptedChain?0:Date.now()+15000'),'preaccepted timer chain is unnecessarily delayed before core processing');
+ok(html.includes('function v1217HasInteractiveBacklog'),'interactive backlog detector missing');
+ok(html.includes("v1217HasInteractiveBacklog()) return"),'background sync/chat/heartbeat are not yielding to task backlog');
+
+ok(task.includes('dependsOnOperationId:String(payload.dependsOnOperationId || \'\')'),'server sanitizer drops dependency');
+ok(task.includes('function queueDependencyStateV1217_'),'server durable dependency state missing');
+ok(task.includes('waitingDependency:true'),'server does not wait safely for predecessor');
+ok(task.includes("errorResponse_('DEPENDENCY_FAILED'"),'permanent predecessor failure does not stop dependent retry loop');
+ok(task.includes('claimServerQueueOperationV125_(spreadsheet, operationId, preloadedRowV1217)'),'server claim does not reuse preloaded queue row');
+ok(task.includes('function getRecentServerQueueRowV1217_'),'first accept race does not use bounded recent-row lookup');
+ok(task.includes("if (clientAttempt > 1 || ['COMPLETED','CONFLICT','REJECTED']"),'new task accept still performs full TextFinder before first write');
+ok(task.includes("processOneServerQueueOperationV125_(candidate.operationId, '', null, candidate.rowData)"),'background worker looks up queue row it already loaded');
+ok(task.includes('CORE_CONFIRMED_EFFECTS_DEFERRED'),'task core is not confirmed before secondary effects');
+ok(task.includes('_deferredEffects:deferred') && task.includes('PAYLOAD_JSON'),'deferred effect context does not compact server queue payload after core');
+ok(task.includes('function completeDeferredTaskEffectsV1217_'),'deferred effects still require reopening task core');
+ok(task.includes("const interactive = executableRows.filter(function(row){ return row.status !== 'EFFECTS_PENDING'; });"),'worker does not prioritize core over effects');
+ok(task.includes('flushHotMetaV1217_'),'queue maintenance does not flush hot metadata');
+
+const coreStart=task.indexOf('const taskWriteStartedAtV1216');
+const coreEnd=task.indexOf('core = {',coreStart);
+const coreBlock=task.slice(coreStart,coreEnd);
+ok(coreBlock.includes('setHotMetaValuesV1217_'),'task core does not use hot metadata');
+ok(!coreBlock.includes('setMetaValuesV1210_'),'task core still rewrites SGO_META while holding lock');
+ok(sec.includes("setHotMetaValuesV1217_({ CHANGE_SEQUENCE:String(next) })"),'changelog sequence still writes SGO_META on every append');
+ok(db.includes("setHotMetaValuesV1217_({\n      DATABASE_VERSION:String(databaseVersion)"),'generic commit still performs repeated SGO_META writes');
+ok(db.includes('sequenceCursorSafe:false'),'generic commit can advance incremental cursor unsafely');
+
+ok(daily.includes('function repairServerTimerDependenciesV1217_'),'server queue timer dependency repair missing');
+ok(daily.includes('function finalizeV1217Deployment()'),'v12.17 deployment finalizer missing');
+ok(daily.includes("setMetaValue_('APP_VERSION','12.18.3')"),'deployment finalizer does not stamp v12.18.3');
+ok(daily.includes("Number(dependencyRepair.busy||0)===0"),'deployment may publish with partially unrepaired timer dependencies');
+ok(daily.includes("readyForPublish:readyForPublish"),'deployment finalizer does not propagate strict v12.17 readiness');
+ok(diag.includes('function diagnoseV1217PersistencePerformance'),'persistence performance diagnostic alias missing');
+ok(diag.includes('function diagnoseV1217PersistenceHealth'),'persistence health diagnostic missing');
+ok(diag.includes('TIMER_CHAIN_PREACCEPTED') && diag.includes('DEFERRED_EFFECTS_COMPLETED'),'v12.17 critical persistence steps are missing from performance diagnostics');
+ok(!task.includes('.deleteSheet(') && !daily.includes('.deleteSheet('),'v12.17 introduces destructive sheet deletion');
+
+console.log('V12_17_PERSISTENCE_TESTS_OK',JSON.stringify({tests}));

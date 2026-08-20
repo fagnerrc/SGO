@@ -1,0 +1,45 @@
+SGO v12.18.4 — LEIA PRIMEIRO
+Data: 14/08/2026
+
+OBJETIVO
+Corrigir o motor do cronômetro após a análise dos diagnósticos de produção: tarefas concluídas que podiam reaparecer, operações antigas/out-of-order, dependências MISSING, retries em lote antes do backoff e excesso de RPC accept -> process.
+
+ARQUIVOS PARA ATUALIZAR
+1. Code.gs
+2. Index.html
+3. V12_Diagnostics.gs
+4. V12_RpcGateway.gs
+5. V12_SecuritySync.gs
+6. V12_TaskOperations.gs
+7. V12_TimerDaily.gs
+
+O pacote com estes 7 arquivos foi validado tanto sobre a v12.18.1 quanto sobre a v12.18.3. Em ambos os casos, os 13 arquivos-fonte de produção resultantes ficaram idênticos aos da v12.18.4 completa.
+
+IMPLANTAÇÃO
+1. Faça uma cópia/backup do projeto atual.
+2. Substitua os 7 arquivos acima.
+3. Salve o projeto.
+4. Execute finalizeV12184Deployment().
+5. NÃO PUBLIQUE enquanto readyForPublish não for true.
+6. Se orphanDependencyRepair.remaining for maior que zero, execute finalizeV12184Deployment() novamente. O reparo é propositalmente feito em lotes curtos para não segurar o ScriptLock por muito tempo.
+7. Confirme especialmente:
+   - version = 12.18.4
+   - dependencyRepair.busy = 0
+   - orphanDependencyRepair.busy = 0
+   - orphanDependencyRepair.remaining = 0
+   - taskCodeRepair.busy = 0
+   - taskCodeRepair.success = true
+   - readyForPublish = true
+8. Publique uma nova versão do Web App.
+9. Faça Ctrl+F5 nos computadores e confirme o badge v12.18.4.
+
+PRIMEIRO TESTE EM PRODUÇÃO
+- Iniciar A -> Pausar -> Retomar -> Concluir.
+- Recarregar a página: A não pode reaparecer como pausada/em andamento.
+- Em seguida, iniciar B imediatamente.
+- Fazer uma sequência rápida de pausa/retomada e confirmar que a fila não cresce de forma descontrolada.
+- Em um computador antigo contaminado, use “Limpar fila antiga” apenas se as operações pendentes puderem ser descartadas.
+- Para uma tarefa específica congelada que deve ser abandonada, use “Descartar tarefa travada”.
+
+IMPORTANTE
+A v12.18.4 reduz contenção e elimina formas concretas de ressurreição do cronômetro, mas continua dentro das limitações do Google Apps Script/Sheets. SERVER_BUSY ainda pode ocorrer em picos extremos; a diferença esperada é que a fila respeite backoff, não ressuscite tarefas terminais e consiga reconciliar dependências antigas.

@@ -1,0 +1,14 @@
+SGO v12.18.4 — integridade do motor do cronômetro
+
+1. Estado terminal monotônico: UPDATE comum não reabre tarefa cronometrada concluída/auditada/cancelada.
+2. Comandos de timer antigos são neutralizados por clientActionAt <= lastChangedAt confirmado.
+3. Overlay local antigo não pode sobrescrever tarefa terminal já confirmada pelo servidor.
+4. Cadeia local ignora operações obsoletas/órfãs ao ligar novas ações do timer.
+5. Batch respeita nextAttemptAt e não carrega retries ainda em backoff.
+6. Aceitação tenta processar na mesma RPC; cliente não faz mais accept -> process imediatamente.
+7. Leitura recente da fila saiu da seção crítica de aceitação, reduzindo tempo sob ScriptLock.
+8. Dependências MISSING antigas são reconciliadas em lote controlado.
+9. COMPLETED antigos saem mais cedo da fila quente (arquivamento após 3 dias quando manutenção é necessária).
+10. Diagnóstico informa orphanDependencies.
+
+Preservado: local-first, tempo de clique original, espera não conta, estimativa padrão 1h, prazo automático na conclusão, descarte de tarefa travada, tombstone, código SGO canônico no servidor e efeitos complementares assíncronos.

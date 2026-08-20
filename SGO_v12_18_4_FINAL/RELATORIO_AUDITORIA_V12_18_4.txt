@@ -1,0 +1,65 @@
+SGO v12.18.4 — RELATÓRIO DE AUDITORIA DO CRONÔMETRO
+Data: 14/08/2026
+Base: v12.18.3 + diagnóstico SGO_Diagnostico_2026-08-14T13-23-49-205Z.json
+
+ACHADOS QUE MOTIVARAM A CORREÇÃO
+- A fila do servidor chegou a 2.115 registros para 434 tarefas.
+- O worker reportava dezenas de operações bloqueadas por dependências, incluindo dependencyStatus=MISSING.
+- Houve SERVER_BUSY/QUEUE_ACCEPT_LOCK_BUSY em ações de CREATE, PAUSE, RESUME e COMPLETE.
+- Operações locais chegaram a permanecer pendentes por muitos minutos.
+- O código permitia UPDATE genérico converter timeTracking.state=completed para paused.
+- O cliente reaplicava overlay otimista sem impedir que um snapshot antigo não-terminal cobrisse um estado terminal confirmado.
+- O batch do cronômetro incluía operações retry_wait sem verificar nextAttemptAt.
+- A arquitetura fazia uma RPC para aceitar e outra RPC imediata para processar.
+
+CORREÇÕES IMPLEMENTADAS
+1. ESTADO TERMINAL MONOTÔNICO
+   UPDATE comum pode editar campos de uma tarefa terminal, mas preserva status, concluidoEm e timeTracking completed. Não existe mais completed -> paused implícito.
+
+2. COMANDOS ANTIGOS NÃO VENCEM COMANDOS NOVOS
+   Ações do cronômetro com clientActionAt <= lastChangedAt/completedAt já confirmado retornam semantic no-op (STALE_TIMER_COMMAND).
+
+3. OVERLAY TERMINAL PROTEGIDO
+   Se serverState já contém tarefa Concluída/Auditada/Cancelada, um overlay local não-terminal é suprimido e não substitui lastSyncedState.
+
+4. CADEIA LOCAL NÃO USA RESÍDUO ÓRFÃO/TERMINAL
+   queueRepairTimerChains ignora operações cuja tarefa já é terminal e resíduos antigos com dependencyStatus=MISSING.
+
+5. BATCH RESPEITA BACKOFF
+   queueTimerBatchCandidates ignora nextAttemptAt futuro e não captura outro item em estado sending.
+
+6. UMA RPC PARA ACEITAR + TENTAR PROCESSAR
+   acceptTaskOperationServer/Batch recebem processNow. Após aceitar e liberar o lock de entrada, tentam processar a operação atual na mesma chamada. Se o core estiver ocupado, a operação continua RECEIVED com o backoff oficial, sem transformar a aceitação em falha.
+
+7. LOCK DE ACEITAÇÃO MAIS CURTO
+   A leitura das linhas recentes da fila saiu de dentro da seção crítica. Dentro do ScriptLock fica essencialmente cache recheck + append.
+
+8. RECONCILIAÇÃO DE DEPENDÊNCIA ÓRFÃ
+   Dependência MISSING com idade >= 5 min:
+   - tarefa terminal: operação vira sucesso semântico;
+   - tarefa existente/CREATE: dependência é removida e a operação volta à validação normal;
+   - tarefa inexistente e ação não CREATE: operação é rejeitada para impedir ressurreição.
+   O finalizador processa em lotes e exige remaining=0 antes de liberar publicação.
+
+9. REPARO DE DEPENDÊNCIAS DO SERVIDOR
+   Operação já bloqueada por dependência MISSING antiga não pode mais virar predecessor de tarefas novas.
+
+10. RETENÇÃO DA FILA QUENTE
+   COMPLETED pode ser arquivado após 3 dias quando a manutenção é acionada; CONFLICT/REJECTED permanecem 14 dias para suporte; EFFECTS_PENDING nunca é arquivado antes de terminar.
+
+11. DIAGNÓSTICO
+   O health check passa a contar orphanDependencies e getOperationStatusServer devolve nextAttemptAt, permitindo ao cliente respeitar o backoff do servidor.
+
+REGRAS PRESERVADAS
+- local-first;
+- clientActionAt como hora real do clique;
+- pausa/espera não contam no tempo;
+- esforço estimado padrão = 1 hora;
+- prazo automático na conclusão somente quando não existe prazo manual;
+- idempotência de COMPLETE;
+- tombstone e descarte de tarefa congelada;
+- código SGO canônico gerado no servidor;
+- efeitos complementares assíncronos depois do core.
+
+LIMITAÇÃO REMANESCENTE
+O backend continua em Apps Script + Sheets e utiliza ScriptLock para seções críticas. A v12.18.4 reduz duração e frequência de disputas, mas não elimina a limitação física do ambiente. A migração futura para PostgreSQL/Supabase continua sendo a solução arquitetural para remover esse gargalo.

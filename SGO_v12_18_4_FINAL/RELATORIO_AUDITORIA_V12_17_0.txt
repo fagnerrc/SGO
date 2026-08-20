@@ -1,0 +1,47 @@
+SGO v12.17.0 — Relatório de Auditoria e Correção
+
+1. EVIDÊNCIA DE PRODUÇÃO
+O diagnóstico v12.16.0 mostrou fila cliente crescendo, operações complete com 4–6 tentativas, SERVER_BUSY recorrente, acceptTaskOperationServer levando vários segundos e uma mutação concluída em ~10,6 s, embora a escrita da linha da tarefa em si tivesse consumido somente ~0,36 s. O custo estava concentrado em locks, SGO_META, lookups e efeitos complementares.
+
+2. CAUSAS TRATADAS
+- Head-of-line blocking do timer no navegador.
+- CREATE e COMPLETE separados mesmo quando CREATE nunca havia saído do PC.
+- Aceitação/lookup da fila mais caros que necessário.
+- SGO_META reescrito no caminho crítico.
+- Atividade/notificação acopladas ao tempo de confirmação da tarefa.
+- Worker/serviços secundários competindo com operações interativas.
+- Rejeições permanentes permanecendo em retry.
+
+3. MUDANÇAS
+Cronômetro:
+- compactação segura apenas antes da primeira tentativa de rede;
+- dependência explícita servidor-servidor;
+- preaccept de dependentes para tornar a cadeia durável no servidor;
+- reparo local das filas herdadas.
+
+Fila:
+- primeira tentativa sem TextFinder completo;
+- race check limitado às linhas recentes sob lock curto;
+- lookup durável mantido nos retries;
+- worker reutiliza linha já carregada;
+- core RECEIVED/PROCESSING tem prioridade sobre EFFECTS_PENDING e manutenção.
+
+Persistência:
+- hot meta para chaves de alta frequência;
+- flush de SGO_META durante manutenção;
+- efeitos diferidos guardados na própria fila e compactados após core;
+- recuperação de efeitos não reabre a versão antiga da tarefa.
+
+Concorrência:
+- sync/chat/heartbeat cedem quando há backlog de tarefa.
+- dependência concluída no core (COMPLETED/EFFECTS_PENDING) já libera a próxima operação.
+
+4. ALTERAÇÕES DELIBERADAMENTE NÃO FEITAS
+- Não removido código legado do Index.html nesta release.
+- Não removida fila, idempotência ou controle de versão.
+- Não alterado modelo de autenticação/permissões.
+- Não alterada estrutura destrutiva das planilhas.
+- Não substituído Google Sheets por outro banco.
+
+5. RISCO RESIDUAL
+Google Apps Script/Sheets continua sujeito a latência externa e um ScriptLock global ainda existe para os trechos realmente atômicos. A release reduz o tempo/volume dentro desses trechos, mas o resultado real deve ser acompanhado pelos diagnósticos de produção.

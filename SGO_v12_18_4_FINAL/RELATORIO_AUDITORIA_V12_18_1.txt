@@ -1,0 +1,30 @@
+AUDITORIA SGO v12.18.1
+
+Base auditada: SGO v12.18.0 + diagnóstico de produção de 13/08/2026.
+
+EVIDÊNCIAS QUE ORIGINARAM A CORREÇÃO
+- operações RECEIVED continuavam sendo consultadas/processadas dezenas de vezes no navegador;
+- havia clientes com fila local superior a 140 operações;
+- dependências RECEIVED podiam permanecer entre as primeiras vagas do worker;
+- tarefas antigas já materializadas passaram a ser neutralizadas por SEMANTIC_NOOP na v12.18.0, confirmando que a camada anti-duplicidade deve ser preservada;
+- a revisão do gateway revelou que acceptTaskOperationBatchServer não estava exposto em V12_RpcGateway.gs, portanto o caminho em lote não podia ser utilizado pelo Web App.
+
+CORREÇÕES AUDITADAS
+[OK] Worker pula dependências não terminais antes de aplicar slice(0,10).
+[OK] Operações independentes atrás de >10 bloqueadas continuam processando (teste de integração real com mock de Sheets).
+[OK] waitingDependency suprime kick cego do navegador.
+[OK] dependency ready permite retomada imediata controlada.
+[OK] tentativas de polling não aumentam attempts de gravação.
+[OK] limpeza local cria backup antes de remover fila.
+[OK] reset epoch impede reidratação de operações antigas de IndexedDB/outra aba.
+[OK] descarte é registrado no servidor antes da limpeza local.
+[OK] descarte é terminal e revalidado antes da mutação.
+[OK] operação já PROCESSING não é sobrescrita à força.
+[OK] V12_RpcGateway expõe batch accept e discard endpoint.
+[OK] anti-duplicidade v12.18 preservada.
+[OK] nenhuma chamada deleteSheet introduzida.
+[OK] sintaxe de todos os .gs e frontend montado validada.
+[OK] suíte completa de regressão aprovada.
+
+OBSERVAÇÃO
+A v12.18.1 melhora integridade e escoamento da fila, mas não elimina as limitações estruturais de latência/concor­rência do Google Apps Script/Google Sheets. RPCs de leitura ainda podem ficar acima das metas em picos de concorrência.

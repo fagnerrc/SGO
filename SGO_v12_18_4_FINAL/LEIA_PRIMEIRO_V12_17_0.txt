@@ -1,0 +1,47 @@
+SGO v12.17.0 FINAL — Estabilidade de Persistência
+
+BASE DE ATUALIZAÇÃO
+- Esta versão foi construída sobre a v12.16.0.
+- Não publique pacotes intermediários em conjunto.
+
+ARQUIVOS ALTERADOS
+1. Code.gs
+2. Index.html
+3. V10_Database.gs
+4. V12_Diagnostics.gs
+5. V12_SecuritySync.gs
+6. V12_TaskOperations.gs
+7. V12_TimerDaily.gs
+
+ARQUIVOS QUE NÃO DEVEM SER SUBSTITUÍDOS NESTE PATCH
+- V10_Communication.gs
+- V10_Core.html
+- V10_Styles.html
+- V12_Communication.gs
+- V12_RpcGateway.gs
+- appsscript.json
+
+PASSO A PASSO
+1. Faça backup do projeto Apps Script e da planilha.
+2. Substitua integralmente os 7 arquivos listados acima.
+3. Salve o projeto.
+4. No editor Apps Script execute finalizeV1217Deployment().
+5. NÃO PUBLIQUE se readyForPublish não for true.
+6. O retorno também deve conter version="12.17.0", dailyAutomation.guaranteed=true, timerConflicts=[] e dependencyRepair.busy=0.
+7. Se dependencyRepair.busy > 0, execute finalizeV1217Deployment() novamente; não publique com reparo parcial.
+8. Atualize a implantação existente: Implantar > Gerenciar implantações > Editar > Nova versão > Implantar.
+9. Abra o Web App, use Ctrl+F5 e confirme a etiqueta v12.17.0.
+
+TESTE MANUAL PRIORITÁRIO
+- Finalizar tarefa A.
+- Imediatamente iniciar tarefa B.
+- Finalizar B antes da confirmação de A.
+- Imediatamente iniciar C.
+- Verificar que as operações seguintes chegam ao servidor sem ficar presas somente no navegador.
+- Verificar que CREATE + COMPLETE de uma tarefa ainda não enviada são compactados em uma única CREATE com estado final.
+
+DIAGNÓSTICOS APÓS PUBLICAÇÃO
+- diagnoseV1217PersistenceHealth()
+- diagnoseV1217PersistencePerformance()
+
+Não limpe manualmente a fila. A versão contém reparo seguro de cadeia local na inicialização e reparo de dependências da fila do servidor em finalizeV1217Deployment().

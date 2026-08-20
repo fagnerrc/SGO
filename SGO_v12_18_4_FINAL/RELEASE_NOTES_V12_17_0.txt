@@ -1,0 +1,28 @@
+SGO v12.17.0 — Notas de Release
+
+FOCO EXCLUSIVO
+Estabilidade de cronômetro, fila e persistência. Não há nova regra de login, permissão, tarefa diária ou mudança destrutiva de banco.
+
+PRINCIPAIS CORREÇÕES
+- Compactação local de CREATE + ação posterior do cronômetro quando a CREATE nunca tentou rede.
+- Dependências duráveis de cronômetro no servidor por dependsOnOperationId.
+- Operações dependentes podem ser aceitas cedo pelo servidor e aguardam execução na ordem correta.
+- Reparo da fila local de cronômetro na inicialização.
+- Reparo seguro de dependências existentes na fila do servidor durante finalizeV1217Deployment().
+- Primeira aceitação da fila evita TextFinder completo; retries preservam lookup durável.
+- Worker reutiliza linha da fila já lida e prioriza core interativo antes de efeitos.
+- Metadados quentes (DATABASE_VERSION, CHANGE_SEQUENCE etc.) usam ScriptProperties/cache no caminho crítico; espelhamento para SGO_META sai do lock pesado.
+- Core da tarefa é confirmado antes de atividade/notificação; efeitos são materializados e recuperados idempotentemente depois, sem reabrir/regravar o core antigo.
+- Rejeições permanentes e falha de dependência saem do retry automático.
+- Sync, chat polling e heartbeat cedem prioridade enquanto há backlog interativo de tarefas.
+- Respostas individuais continuam sem avançar cursor global de changelog sem sequenceCursorSafe explícito.
+- Novos diagnósticos de saúde/performance da persistência.
+
+MECANISMOS PRESERVADOS
+- operationId/idempotência
+- expectedVersion/controle de versão
+- fila local durável
+- fila oficial do servidor
+- autenticação e permissões v12.15+
+- tarefa diária
+- prazo/estimativa do cronômetro

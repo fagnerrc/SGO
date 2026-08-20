@@ -1,0 +1,45 @@
+const fs=require('fs');
+const path=require('path');
+const root=path.resolve(__dirname,'..');
+const html=fs.readFileSync(path.join(root,'Index.html'),'utf8');
+const task=fs.readFileSync(path.join(root,'V12_TaskOperations.gs'),'utf8');
+const daily=fs.readFileSync(path.join(root,'V12_TimerDaily.gs'),'utf8');
+const sec=fs.readFileSync(path.join(root,'V12_SecuritySync.gs'),'utf8');
+function ok(v,m){if(!v)throw new Error(m);}
+ok(html.includes('>v12.18.3</span>'),'v12.18.3 badge missing');
+ok(sec.includes("const SGO_APP_VERSION_V1215 = '12.18.3'"),'server version 12.18.3 missing');
+ok(task.includes("const V12183_TASK_CODE_SEQUENCE_PROP = 'SGO_V12183_TASK_CODE_SEQUENCE'"),'server task code sequence missing');
+ok(task.includes('function allocateTaskCodeV12183_'),'server canonical code allocator missing');
+ok(task.includes('function repairDuplicateTaskCodesV12183_'),'duplicate task code repair missing');
+ok(task.includes("nextTask.code = allocateTaskCodeV12183_(spreadsheet)"),'CREATE does not receive server code');
+ok(task.includes("nextTask.code = String(currentTask.code)"),'updates can still rename canonical task code');
+ok(task.includes("step:'TASK_CODE_CANONICALIZED'"),'canonical code diagnostic missing');
+ok(task.includes("step:'DUPLICATE_TASK_CODE_REPAIRED'"),'duplicate code repair diagnostic missing');
+ok(task.includes("if(!info) return false;"),'task-wide abandon tombstone missing');
+ok(!task.includes("info.userId && String(info.userId)!==String(userId||'')"),'abandon tombstone still scoped to one sender');
+ok(html.includes('códigos confirmados pelo servidor são imutáveis no navegador') || html.includes('códigos confirmados pelo servidor são imutáveis'),'client confirmed-code protection missing');
+ok(html.includes('data-v12183-abandon-task'),'queue stuck-task discard button missing');
+ok(html.includes('function queueAbandonFrozenTaskV12183_'),'queue stuck-task direct recovery missing');
+ok(html.includes("v12ServerCall('abandonTimedTaskServer'"),'queue recovery does not bypass task queue');
+ok(html.includes('canonicalTaskV12183'),'remaining timer operations are not updated with canonical server code');
+ok(daily.includes('function finalizeV12183Deployment()'),'v12.18.3 finalizer missing');
+ok(daily.includes('taskCodeRepair=repairDuplicateTaskCodesV12183_()'),'finalizer does not repair duplicate task codes');
+ok(daily.includes("setMetaValue_('APP_VERSION','12.18.3')"),'finalizer does not stamp 12.18.3');
+ok(daily.includes('serverCanonicalTaskCode:true'),'finalizer does not report server canonical codes');
+ok(daily.includes('stuckTaskDirectDiscard:true'),'finalizer does not report stuck task direct discard');
+ok(daily.includes('duplicateCodeRepair:true'),'finalizer does not report duplicate code repair');
+// Behavioral check: two clients may propose the same visible code, but the server
+// allocator advances one global sequence and never reuses the proposal.
+const helperStart=task.indexOf("const V12183_TASK_CODE_SEQUENCE_PROP");
+const helperEnd=task.indexOf('/** v12.18.2 — tombstone',helperStart);
+ok(helperStart>=0&&helperEnd>helperStart,'could not extract task code helpers');
+const properties=Object.create(null);
+const fakeTasks=[{id:'a',code:'SGO-001007'},{id:'b',code:'SGO-001008'}];
+const factory=new Function('PropertiesService','readCollectionRecords_','getSpreadsheet_',task.slice(helperStart,helperEnd)+`\nreturn {num:taskCodeNumberV12183_,fmt:taskCodeFormatV12183_,ensure:ensureTaskCodeSequenceV12183_,alloc:allocateTaskCodeV12183_};`);
+const helpers=factory({getScriptProperties(){return {getProperty(k){return properties[k]||'';},setProperty(k,v){properties[k]=String(v);}};}},()=>fakeTasks,()=>({}));
+ok(helpers.num('SGO-001008')===1008,'task code parser failed');
+ok(helpers.fmt(1009)==='SGO-001009','task code formatter failed');
+ok(helpers.ensure({}).next===1009,'server sequence did not start after highest persisted code');
+ok(helpers.alloc({})==='SGO-001009','first canonical allocation wrong');
+ok(helpers.alloc({})==='SGO-001010','second canonical allocation reused a task code');
+console.log('V12_18_3_TASK_IDENTITY_TESTS_OK 27/27');

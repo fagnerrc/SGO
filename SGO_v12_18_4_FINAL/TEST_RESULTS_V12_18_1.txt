@@ -1,0 +1,29 @@
+Prévia montada: 653727 bytes; 1 bloco(s) JavaScript inline.
+SYNTAX_OK Code.gs
+SYNTAX_OK V10_Communication.gs
+SYNTAX_OK V10_Database.gs
+SYNTAX_OK V12_Communication.gs
+SYNTAX_OK V12_Diagnostics.gs
+SYNTAX_OK V12_RpcGateway.gs
+SYNTAX_OK V12_SecuritySync.gs
+SYNTAX_OK V12_TaskOperations.gs
+SYNTAX_OK V12_TimerDaily.gs
+SYNTAX_OK assembled_frontend.js
+V12_CONTRACT_TESTS_OK {"clientCalls":26,"serverFunctions":279}
+V12_INTEGRATION_TESTS_OK {"databaseVersion":35,"changeSequence":101,"tasks":3,"conversations":0,"messages":0}
+V12_FRONTEND_BEHAVIOR_TESTS_OK {"tests":11}
+V12_TASK_SAVE_REGRESSION_TESTS_OK {"tests":8}
+V12_OPERATION_QUEUE_TESTS_OK {"tests":19}
+V12_QUEUE_BEHAVIOR_TESTS_OK {"tests":31,"queued":2}
+V12_9_REGRESSION_TESTS_OK {"tests":22}
+V12_10_REGRESSION_TESTS_OK {"tests":29}
+V12_14_REGRESSION_TESTS_OK {"tests":84}
+V12_15_HARDENING_TESTS_OK {"tests":104}
+V12_15_2_PERFORMANCE_TESTS_OK {"tests":10}
+V12_TIMER_REGRESSION_TESTS_OK {"tests":8}
+V12_16_SAVE_RELIABILITY_TESTS_OK {"tests":49}
+V12_17_PERSISTENCE_TESTS_OK {"tests":42}
+V12_18_ANTIDUP_TESTS_OK {"tests":36}
+V12_18_1_QUEUE_RECOVERY_TESTS_OK {"tests":35}
+V12_INTEGRATION_TESTS_OK {"databaseVersion":35,"changeSequence":101,"tasks":3,"conversations":0,"messages":0}
+SGO_V12_RELEASE_VALIDATION_OK

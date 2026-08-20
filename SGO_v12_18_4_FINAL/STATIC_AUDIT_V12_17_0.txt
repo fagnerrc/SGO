@@ -1,0 +1,9 @@
+SGO v12.17.0 — Auditoria Estática
+
+- 264 declarações de funções backend analisadas; 0 nomes duplicados entre arquivos .gs.
+- Contrato cliente/servidor: 24 RPCs usados pelo cliente, 0 ausentes no gateway.
+- Nenhum deleteSheet introduzido pela v12.17.
+- clearContents existente permanece somente em rotinas legadas/schema já presentes na base; não foi introduzido como reparo da fila.
+- Patch v12.17 altera somente 7 arquivos de produção em relação à v12.16.0.
+- V10_Core.html, V10_Styles.html, V10_Communication.gs, V12_Communication.gs, V12_RpcGateway.gs e appsscript.json permanecem byte a byte iguais à base v12.16.0.
+- Código legado/overrides do frontend permanece como dívida técnica deliberadamente não removida nesta release para reduzir risco de regressão.

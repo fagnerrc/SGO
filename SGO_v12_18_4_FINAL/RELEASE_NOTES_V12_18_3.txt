@@ -1,0 +1,22 @@
+SGO v12.18.3 — identidade canônica de tarefas e descarte de tarefas travadas
+
+Motivo desta versão
+- A v12.18.1 ainda permitia que cada navegador calculasse localmente o próximo código visível (SGO-xxxxxx).
+- Dois computadores podiam propor o mesmo código ao mesmo tempo.
+- Filas antigas podiam continuar exibindo PAUSAR/FINALIZAR de uma tarefa cronometrada que o usuário já queria abandonar.
+- A v12.18.2 adicionou o descarte direto do cronômetro; a v12.18.3 amplia a correção para eliminar a origem dos códigos duplicados.
+
+Correções principais
+1. Código SGO passa a ser canônico e alocado pelo servidor, sob o mesmo ScriptLock da criação.
+2. Código confirmado pelo servidor não pode mais ser alterado por snapshots/filas antigas do navegador.
+3. finalizeV12183Deployment() procura códigos SGO duplicados já existentes e renumera somente as cópias necessárias, preservando histórico.
+4. Operações posteriores de uma CREATE recebem o código canônico quando a CREATE confirma, evitando o código antigo reaparecer na UI.
+5. Tombstone de cronômetro abandonado passa a valer para a taskId inteira, bloqueando ressurreição por outra aba/operação antiga.
+6. A fila mostra “Descartar tarefa travada” para cronômetros com 3+ tentativas ou em conflito/rejeição; a ação cancela/abandona diretamente no servidor e remove todas as operações locais daquela taskId.
+7. A limpeza de fila da v12.18.1 e o descarte direto da v12.18.2 permanecem ativos.
+
+Importante
+- A migração NÃO apaga tarefas válidas só porque o código está duplicado.
+- Em um grupo de tarefas ativas com o mesmo código, a mais antiga preserva o código; as demais recebem novos códigos.
+- Se houver uma cópia excluída com aquele código, a cópia ativa é renumerada para não reutilizar um número histórico.
+- Tarefas diárias automáticas com código DIA-* não entram nessa renumeração.

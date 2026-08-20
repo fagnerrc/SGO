@@ -1,0 +1,23 @@
+AUDITORIA SGO v12.18.3
+
+Causa estrutural identificada
+O frontend ainda executava nextTaskCode() usando state.settings.taskSequence local. Como cada navegador possui estado/snapshot próprio, dois usuários podiam propor o mesmo código humano SGO-xxxxxx. O id técnico da tarefa era diferente, mas o código visível podia colidir e permanecer em operações antigas da fila.
+
+Correção
+- O servidor agora ignora a identidade numérica proposta pelo cliente no CREATE e aloca o próximo código canônico dentro do lock de persistência.
+- Operações de UPDATE/PAUSE/RESUME/COMPLETE preservam sempre o código confirmado no registro atual do servidor.
+- A migração repairDuplicateTaskCodesV12183_ reconcilia duplicidades históricas sem apagar tarefas.
+- O frontend deixa de renumerar tarefas confirmadas dentro de normalizeState().
+- Quando uma CREATE confirma, o código canônico é propagado para as operações seguintes da mesma taskId que continuam na outbox.
+- O descarte direto de cronômetro da v12.18.2 permanece e agora também pode ser acionado pela própria fila em tarefas travadas.
+- O tombstone de abandono é por taskId, impedindo que outra aba/operação antiga ressuscite o cronômetro.
+
+Risco de dados
+A migração não exclui tarefas por duplicidade de código. Apenas altera o campo code de cópias necessárias e registra a alteração no histórico da própria tarefa.
+
+Validação
+- Sintaxe de todos os .gs: OK
+- Frontend montado: OK
+- Todas as suítes de regressão v12.9 → v12.18.3: OK
+- Testes específicos v12.18.3: 27/27
+- Resultado final: SGO_V12_RELEASE_VALIDATION_OK

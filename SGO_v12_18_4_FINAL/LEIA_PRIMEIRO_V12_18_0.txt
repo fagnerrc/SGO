@@ -1,0 +1,42 @@
+SGO v12.18.0 — IMPLANTAÇÃO
+
+Substitua no Apps Script somente:
+- Code.gs
+- Index.html
+- V12_Diagnostics.gs
+- V12_SecuritySync.gs
+- V12_TaskOperations.gs
+- V12_TimerDaily.gs
+
+Depois de salvar, execute manualmente:
+  finalizeV1218Deployment()
+
+Só publique se o retorno possuir:
+- success: true
+- confirmed: true
+- readyForPublish: true
+- version: "12.18.0"
+- dependencyRepair.busy: 0
+- antiDuplication.semanticIdempotency: true
+- antiDuplication.duplicateCompleteSuppression: true
+- antiDuplication.legacyCreateConflictRecovery: true
+
+Se dependencyRepair.busy > 0, não publique. Aguarde a fila aliviar e execute novamente.
+
+Depois:
+1. Implantar > Gerenciar implantações > Editar.
+2. Criar nova versão e implantar.
+3. Abrir o SGO e usar Ctrl+F5.
+4. Confirmar o badge v12.18.0.
+5. Não use repetidamente "Tentar agora" para forçar a fila.
+
+Teste prioritário em produção:
+- iniciar uma tarefa cronometrada;
+- pausar, retomar e pausar rapidamente;
+- finalizar;
+- tentar finalizar novamente;
+- confirmar que existe somente uma conclusão e que a tarefa não duplica.
+
+Após o teste, gere:
+  diagnoseV1218PersistenceHealth()
+  diagnoseV1218PersistencePerformance()

@@ -1,0 +1,2482 @@
+/* SGO v12 — camada segura de sessão, tarefas, sincronização e comunicação. */
+var SGO_V10 = {
+  databaseVersion: 0,
+  lastSyncedState: null,
+  remoteReady: false,
+  bootstrapping: true,
+  syncInProgress: false,
+  saveInProgress: false,
+  saveQueued: false,
+  syncTimer: null,
+  heartbeatTimer: null,
+  lastSyncAt: '',
+  status: 'checking',
+  dirtyTaskForm: false,
+  taskDraft: null,
+  conflict: null,
+  operationContext: null,
+  queuedToast: null,
+  recentActions: [],
+  activeConversationId: '',
+  presence: [],
+  allowModalClose: false,
+  preflightInProgress: false,
+  nextOperationHint: null,
+  chatSearchTerm: '',
+  replyToMessageId: '',
+  chatMessageLimit: 100,
+  sessionToken: '',
+  sessionExpiresAt: 0,
+  sessionValidated: false,
+  changeSequence: 0,
+  chatCursor: 0,
+  chatTimer: null,
+  pendingOperation: null,
+  lastFullSyncAt: 0,
+  requestSerial: 0
+};
+
+var V10_TRACKED_COLLECTIONS = ['tasks', 'messages', 'feedbacks', 'notifications', 'collaborators', 'processes', 'audits', 'activity', 'securityLog', 'errors', 'conversations', 'conversationReads'];
+var V10_SYSTEM_FIELDS = ['companies', 'settings', 'organization', 'security', 'branding'];
+var V10_FEEDBACK_TYPES = ['Orientação', 'Solicitação de informação', 'Correção necessária', 'Observação', 'Aprovação', 'Devolução', 'Retorno concluído'];
+var V10_FEEDBACK_STATUS = ['Novo feedback', 'Feedback não lido', 'Aguardando resposta', 'Correção solicitada', 'Correção realizada', 'Retorno vencido', 'Feedback encerrado'];
+var V10_DRAFT_KEY = 'sgo_v12_task_draft';
+var V12_SESSION_KEY = 'sgo_v12_server_session';
+
+function v10Clone(value) {
+  return JSON.parse(JSON.stringify(value === undefined ? null : value));
+}
+
+function v10EnsureCollections(target) {
+  target = target || state;
+  V10_TRACKED_COLLECTIONS.forEach(function (collection) {
+    if (!Array.isArray(target[collection])) target[collection] = [];
+  });
+  target.version = 12;
+  return target;
+}
+
+function v10RecordAction(action) {
+  SGO_V10.recentActions.push(String(action || '').slice(0, 300));
+  SGO_V10.recentActions = SGO_V10.recentActions.slice(-15);
+}
+
+function v10Equal(a, b) {
+  return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+}
+
+function v10MapById(items) {
+  var map = {};
+  (Array.isArray(items) ? items : []).forEach(function (item) {
+    if (item && item.id) map[String(item.id)] = item;
+  });
+  return map;
+}
+
+function v10BuildDiff() {
+  var previous = v10EnsureCollections(v10Clone(SGO_V10.lastSyncedState || {}));
+  var current = v10EnsureCollections(v10Clone(state || {}));
+  var changes = [];
+
+  V10_TRACKED_COLLECTIONS.forEach(function (collection) {
+    var oldMap = v10MapById(previous[collection]);
+    var newMap = v10MapById(current[collection]);
+    Object.keys(newMap).forEach(function (recordId) {
+      var oldRecord = oldMap[recordId];
+      var newRecord = newMap[recordId];
+      if (!oldRecord || !v10Equal(oldRecord, newRecord)) {
+        changes.push({
+          collection: collection,
+          id: recordId,
+          expectedVersion: Number(oldRecord && oldRecord._recordVersion || 0),
+          data: newRecord,
+          deleted: false
+        });
+      }
+    });
+    Object.keys(oldMap).forEach(function (recordId) {
+      if (!newMap[recordId]) {
+        changes.push({
+          collection: collection,
+          id: recordId,
+          expectedVersion: Number(oldMap[recordId]._recordVersion || 0),
+          data: oldMap[recordId],
+          deleted: true
+        });
+      }
+    });
+  });
+
+  var systemPatch = {};
+  V10_SYSTEM_FIELDS.forEach(function (field) {
+    if (!v10Equal(previous[field], current[field])) systemPatch[field] = current[field];
+  });
+  return { changes: changes, systemPatch: systemPatch };
+}
+
+
+function v1216BuildTaskScopedDiff(context) {
+  context = context || {};
+  var previous = v10EnsureCollections(v10Clone(SGO_V10.lastSyncedState || {}));
+  var current = v10EnsureCollections(v10Clone(state || {}));
+  var oldMap = v10MapById(previous.tasks || []);
+  var newMap = v10MapById(current.tasks || []);
+  var changes = [];
+  var ids = {};
+  var explicitId = String(context.taskId || '');
+  if (explicitId) ids[explicitId] = true;
+  else {
+    Object.keys(oldMap).forEach(function(idValue){ ids[idValue] = true; });
+    Object.keys(newMap).forEach(function(idValue){ ids[idValue] = true; });
+  }
+  Object.keys(ids).forEach(function(recordId) {
+    var oldRecord = oldMap[recordId];
+    var newRecord = newMap[recordId];
+    if (newRecord && (!oldRecord || !v10Equal(oldRecord, newRecord))) {
+      changes.push({collection:'tasks',id:recordId,expectedVersion:Number(oldRecord && oldRecord._recordVersion || 0),data:newRecord,deleted:false});
+    } else if (oldRecord && !newRecord) {
+      changes.push({collection:'tasks',id:recordId,expectedVersion:Number(oldRecord._recordVersion || 0),data:oldRecord,deleted:true});
+    }
+  });
+  return {changes:changes,systemPatch:{}};
+}
+
+function v10OperationId() {
+  return 'op_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+}
+
+function v10FormatClock(value) {
+  if (!value) return '—';
+  var date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function v10SetStatus(status, message) {
+  SGO_V10.status = status;
+  var element = document.getElementById('v10SyncStatus');
+  if (!element) return;
+  var labels = {
+    updated: 'Atualizado', checking: 'Verificando atualização', syncing: 'Sincronizando',
+    saving: 'Salvando', pending: 'Alterações pendentes', stale: 'Desatualizado',
+    conflict: 'Conflito detectado', offline: 'Sem conexão', local: 'Trabalhando localmente', error: 'Erro de sincronização'
+  };
+  element.dataset.state = status;
+  element.title = message || labels[status] || status;
+  element.innerHTML = '<span>' + escapeHTML(labels[status] || status) + '</span><span class="v10-sync-time">' + escapeHTML(status === 'updated' ? v10FormatClock(SGO_V10.lastSyncAt) : (message || '')) + '</span>';
+  v10SetTaskSaveLocked(['stale', 'conflict', 'offline', 'error', 'checking', 'syncing', 'saving'].indexOf(status) >= 0);
+}
+
+function v10SetTaskSaveLocked(locked) {
+  var button = document.querySelector('#taskForm button[type="submit"]');
+  if (!button) return;
+  var taskId = document.getElementById('taskId') ? document.getElementById('taskId').value : '';
+  var task = taskId ? state.tasks.find(function (item) { return item.id === taskId; }) : null;
+  var permissionLocked = Boolean(task && !can('editTask', { task: task }));
+  button.disabled = Boolean(locked || permissionLocked || SGO_V10.preflightInProgress || SGO_V10.saveInProgress);
+  button.classList.toggle('v10-save-locked', button.disabled);
+}
+
+function v10CanStartWrite(actionLabel) {
+  if (!runningInGoogleAppsScript() || !SGO_V10.remoteReady || !SGO_V10.sessionValidated || !SGO_V10.sessionToken || SGO_V10.status !== 'updated' || SGO_V10.syncInProgress || SGO_V10.saveInProgress || SGO_V10.preflightInProgress) {
+    v10SetStatus(!navigator.onLine ? 'offline' : (SGO_V10.status === 'updated' ? 'checking' : SGO_V10.status), 'Sincronize o SGO antes de gravar.');
+    V10_LEGACY.toast('Gravação bloqueada', 'O SGO precisa estar atualizado e confirmado pelo servidor antes de ' + (actionLabel || 'gravar') + '.', 'error');
+    return false;
+  }
+  return true;
+}
+
+function v10PersistLocal(silent) {
+  var remoteState = window.__sgoRemoteReady;
+  window.__sgoRemoteReady = false;
+  try {
+    return V10_LEGACY.saveState.call(window, { silent: silent !== false });
+  } finally {
+    window.__sgoRemoteReady = remoteState;
+  }
+}
+
+function v10InstallUI() {
+  if (document.getElementById('v10SyncStatus')) return;
+  pageMeta.chat = ['Chat interno', 'Conversas operacionais e mensagens vinculadas às tarefas'];
+  pageMeta.erros = ['Erros e diagnóstico', 'Falhas, sincronização e suporte técnico'];
+
+  var topActions = document.querySelector('.top-actions');
+  if (topActions) {
+    var syncWrap = document.createElement('div');
+    syncWrap.className = 'v10-sync-wrap';
+    syncWrap.innerHTML = '<div class="v10-sync-status" id="v10SyncStatus" data-state="checking"><span>Verificando atualização</span><span class="v10-sync-time"></span></div>' +
+      '<button class="btn btn-outline btn-icon" id="v10SyncNow" type="button" title="Sincronizar agora"><i data-lucide="refresh-cw"></i></button>';
+    topActions.insertBefore(syncWrap, topActions.firstChild);
+
+    var notificationWrap = document.createElement('div');
+    notificationWrap.className = 'v10-notification-wrap';
+    notificationWrap.innerHTML = '<button class="v10-icon-button" id="v10NotificationButton" type="button" aria-expanded="false" title="Notificações"><i data-lucide="bell"></i><span class="v10-notification-badge hidden" id="v10NotificationBadge">0</span></button>' +
+      '<div class="v10-dropdown hidden" id="v10NotificationDropdown"><div class="v10-dropdown-head"><strong>Notificações</strong><button class="btn btn-ghost btn-sm" id="v10MarkAllRead" type="button">Marcar todas como lidas</button></div><div class="v10-dropdown-list" id="v10NotificationList"></div></div>';
+    topActions.insertBefore(notificationWrap, document.getElementById('accountMenu'));
+  }
+
+  var systemNav = document.querySelector('[data-page="administracao"]');
+  if (systemNav && systemNav.parentNode) {
+    var chatButton = document.createElement('button');
+    chatButton.className = 'nav-item';
+    chatButton.dataset.page = 'chat';
+    chatButton.innerHTML = '<i data-lucide="messages-square"></i>Chat interno<span class="nav-badge" id="badgeChat">0</span>';
+    systemNav.parentNode.insertBefore(chatButton, systemNav);
+
+    var errorButton = document.createElement('button');
+    errorButton.className = 'nav-item';
+    errorButton.dataset.page = 'erros';
+    errorButton.id = 'v10ErrorsNav';
+    errorButton.innerHTML = '<i data-lucide="bug"></i>Erros e diagnóstico<span class="nav-badge" id="badgeErrors">0</span>';
+    systemNav.parentNode.insertBefore(errorButton, document.querySelector('[data-page="configuracoes"]'));
+  }
+
+  var content = document.querySelector('.content');
+  if (content) {
+    var chatPage = document.createElement('section');
+    chatPage.className = 'page';
+    chatPage.id = 'page-chat';
+    chatPage.innerHTML = '<div class="section-header"><div><h3>Chat interno</h3><p>Converse com a equipe e mantenha as decisões relacionadas às tarefas.</p></div><div class="section-actions"><button class="btn btn-primary" id="v10NewDirectChat"><i data-lucide="message-circle-plus"></i>Nova conversa</button></div></div><div id="v10ChatContent"></div>';
+    content.appendChild(chatPage);
+
+    var errorsPage = document.createElement('section');
+    errorsPage.className = 'page';
+    errorsPage.id = 'page-erros';
+    errorsPage.innerHTML = '<div class="section-header"><div><h3>Central administrativa de erros</h3><p>Falhas registradas pelo navegador e pelo servidor.</p></div><div class="section-actions"><button class="btn btn-outline" id="v10RefreshErrors"><i data-lucide="refresh-cw"></i>Atualizar</button><button class="btn btn-primary" id="v10OpenProblem"><i data-lucide="message-square-warning"></i>Informar problema</button></div></div><div id="v10ErrorsContent"></div>';
+    content.appendChild(errorsPage);
+  }
+
+  var taskModal = document.getElementById('taskModal');
+  if (taskModal) {
+    var footer = taskModal.querySelector('.modal-footer');
+    var dirty = document.createElement('div');
+    dirty.id = 'v10DirtyNote';
+    dirty.className = 'v10-dirty-note';
+    dirty.textContent = 'Há alterações não salvas. O conteúdo será preservado durante a sincronização.';
+    footer.parentNode.insertBefore(dirty, footer);
+    var conflict = document.createElement('div');
+    conflict.id = 'v10TaskConflict';
+    conflict.className = 'v10-conflict-panel hidden';
+    footer.parentNode.insertBefore(conflict, footer);
+  }
+
+  var problemButton = document.createElement('button');
+  problemButton.className = 'btn btn-outline btn-sm v10-problem-button';
+  problemButton.id = 'v10FloatingProblem';
+  problemButton.type = 'button';
+  problemButton.innerHTML = '<i data-lucide="circle-help"></i>Informar problema';
+  document.body.appendChild(problemButton);
+
+  var problemModal = document.createElement('div');
+  problemModal.className = 'modal-overlay';
+  problemModal.id = 'v10ProblemModal';
+  problemModal.innerHTML = '<div class="modal modal-sm"><div class="modal-header"><div><h3>Informar problema</h3><p>Descreva o que aconteceu. Os dados técnicos necessários serão anexados automaticamente.</p></div><button class="modal-close" data-v10-close="v10ProblemModal" aria-label="Fechar"><i data-lucide="x"></i></button></div><div class="modal-body"><div class="form-group"><label for="v10ProblemMessage">O que aconteceu? <span>*</span></label><textarea class="control" id="v10ProblemMessage" maxlength="2000" placeholder="Informe a tela, a ação executada e o resultado observado."></textarea></div></div><div class="modal-footer"><button class="btn btn-outline" data-v10-close="v10ProblemModal" type="button">Cancelar</button><button class="btn btn-primary" id="v10SendProblem" type="button"><i data-lucide="send"></i>Enviar relatório</button></div></div>';
+  document.body.appendChild(problemModal);
+  refreshIcons();
+}
+
+function v10CaptureTaskDraft() {
+  var form = document.getElementById('taskForm');
+  if (!form) return null;
+  var draft = { taskId: document.getElementById('taskId').value, fields: {}, selected: {}, capturedAt: new Date().toISOString() };
+  form.querySelectorAll('input, textarea, select').forEach(function (field) {
+    if (!field.id) return;
+    if (field.multiple) draft.selected[field.id] = Array.from(field.selectedOptions).map(function (option) { return option.value; });
+    else if (field.type === 'checkbox') draft.fields[field.id] = field.checked;
+    else draft.fields[field.id] = field.value;
+  });
+  try { storageSet(V10_DRAFT_KEY, JSON.stringify(draft)); } catch (error) { console.warn(error); }
+  SGO_V10.taskDraft = draft;
+  return draft;
+}
+
+function v10ApplyTaskDraft(draft) {
+  if (!draft || !draft.fields) return;
+  Object.keys(draft.fields).forEach(function (id) {
+    var field = document.getElementById(id);
+    if (!field) return;
+    var serverValue = field.type === 'checkbox' ? Boolean(field.checked) : String(field.value || '');
+    var draftValue = field.type === 'checkbox' ? Boolean(draft.fields[id]) : String(draft.fields[id] || '');
+    var differs = Boolean(draft.taskId) && serverValue !== draftValue;
+    field.classList.toggle('v10-field-conflict', differs);
+    if (differs) field.title = 'Este campo difere da versão atual do servidor. Revise antes de salvar.';
+    if (field.type === 'checkbox') field.checked = Boolean(draft.fields[id]);
+    else field.value = draft.fields[id];
+  });
+  Object.keys(draft.selected || {}).forEach(function (id) {
+    var field = document.getElementById(id);
+    if (!field || !field.multiple) return;
+    Array.from(field.options).forEach(function (option) { option.selected = draft.selected[id].indexOf(option.value) >= 0; });
+  });
+  updateTaskConditionalFields();
+  SGO_V10.dirtyTaskForm = true;
+  var note = document.getElementById('v10DirtyNote');
+  if (note) note.classList.add('visible');
+}
+
+function v10ClearTaskDraft() {
+  SGO_V10.taskDraft = null;
+  SGO_V10.dirtyTaskForm = false;
+  storageRemove(V10_DRAFT_KEY);
+  var note = document.getElementById('v10DirtyNote');
+  if (note) note.classList.remove('visible');
+  var conflict = document.getElementById('v10TaskConflict');
+  if (conflict) { conflict.classList.add('hidden'); conflict.innerHTML = ''; }
+  var form = document.getElementById('taskForm');
+  if (form) form.querySelectorAll('.v10-field-conflict').forEach(function (field) { field.classList.remove('v10-field-conflict'); field.removeAttribute('title'); });
+}
+
+function v10ShowTaskConflict(result) {
+  SGO_V10.conflict = result || {};
+  v10SetStatus('conflict', result && result.message ? result.message : 'A tarefa foi alterada por outro usuário.');
+  var panel = document.getElementById('v10TaskConflict');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  if (!document.getElementById('taskModal').classList.contains('open')) V10_LEGACY.toast('Conflito detectado', result && result.message || 'A base foi alterada. Sincronize antes de tentar novamente.', 'error');
+  panel.innerHTML = '<strong>Gravação bloqueada para evitar conflito</strong><p>' + escapeHTML(result && result.message || 'A base foi atualizada por outro usuário.') + ' O conteúdo digitado continua preservado. Clique em “Sincronizar agora” para carregar a versão atual e reaplicar o rascunho.</p><div style="display:flex;gap:7px;margin-top:9px;flex-wrap:wrap"><button type="button" class="btn btn-outline btn-sm" id="v10CopyDraft">Copiar conteúdo</button><button type="button" class="btn btn-primary btn-sm" id="v10ConflictSync">Sincronizar agora</button></div>';
+  refreshIcons();
+}
+
+function v10CopyDraftText() {
+  var draft = SGO_V10.taskDraft || v10CaptureTaskDraft();
+  if (!draft) return;
+  var lines = Object.keys(draft.fields || {}).filter(function (key) { return draft.fields[key] !== '' && key !== 'taskId'; }).map(function (key) {
+    var label = document.querySelector('label[for="' + key + '"]');
+    return (label ? label.textContent.replace('*', '').trim() : key) + ': ' + String(draft.fields[key]);
+  });
+  navigator.clipboard.writeText(lines.join('\n')).then(function () {
+    V10_LEGACY.toast('Conteúdo copiado', 'O preenchimento foi copiado para a área de transferência.', 'success');
+  }).catch(function () {
+    V10_LEGACY.toast('Não foi possível copiar', 'Selecione o conteúdo manualmente antes de fechar.', 'error');
+  });
+}
+
+
+function v12ServerCall(functionName, payload, options) {
+  options = options || {};
+  var timeoutMs = Math.max(1000, Number(options.timeoutMs || 15000));
+  return new Promise(function (resolve, reject) {
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      var error = new Error(options.timeoutMessage || 'O servidor não respondeu no tempo esperado.');
+      error.code = 'CLIENT_TIMEOUT';
+      reject(error);
+    }, timeoutMs);
+    try {
+      var runner = google.script.run
+        .withSuccessHandler(function (result) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(result);
+        })
+        .withFailureHandler(function (error) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(error instanceof Error ? error : new Error(error && error.message || 'Falha de comunicação com o servidor.'));
+        });
+      runner[functionName](payload || {});
+    } catch (error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    }
+  });
+}
+
+function v12SessionPayload(extra) {
+  var payload = Object.assign({}, extra || {});
+  payload.sessionToken = SGO_V10.sessionToken || '';
+  return payload;
+}
+
+function v12ApplyState(serverState, databaseVersion, changeSequence) {
+  state = normalizeState(serverState || {});
+  v10EnsureCollections(state);
+  state.security = state.security || {};
+  state.security.pinHashes = {};
+  state.security.failedAttempts = {};
+  SGO_V10.databaseVersion = Number(databaseVersion || state._databaseVersion || 0);
+  SGO_V10.changeSequence = Number(changeSequence || state._changeSequence || SGO_V10.changeSequence || 0);
+  state._databaseVersion = SGO_V10.databaseVersion;
+  state._changeSequence = SGO_V10.changeSequence;
+  SGO_V10.lastSyncedState = v10Clone(state);
+  SGO_V10.lastSyncAt = new Date().toISOString();
+  v10PersistLocal(true);
+}
+
+function v12PatchCollection(collection, recordId, data, deleted) {
+  if (!Array.isArray(state[collection])) state[collection] = [];
+  var index = state[collection].findIndex(function (item) { return item && String(item.id) === String(recordId); });
+  if (deleted) {
+    if (index >= 0) state[collection].splice(index, 1);
+    return;
+  }
+  if (!data) return;
+  if (index >= 0) state[collection][index] = v10Clone(data);
+  else state[collection].push(v10Clone(data));
+}
+
+function v12ApplyChangedRecords(records) {
+  (Array.isArray(records) ? records : []).forEach(function (record) {
+    if (!record || !record.collection || !record.id) return;
+    v12PatchCollection(record.collection, record.id, record.data, Boolean(record.deleted));
+  });
+  v10EnsureCollections(state);
+}
+
+function v12RefreshAfterPatch() {
+  v10PersistLocal(true);
+  populateFilterOptions();
+  renderPage(currentPage);
+  renderTopbarUser();
+  renderTimerDock();
+  v10RenderNotifications();
+  if (document.getElementById('taskDetailsModal') && document.getElementById('taskDetailsModal').classList.contains('open')) {
+    var detailsId = document.getElementById('taskDetailsId').value;
+    if (detailsId) renderTaskDetails(detailsId);
+  }
+}
+
+function v12SaveSessionLocal(token, expiresAt) {
+  SGO_V10.sessionToken = String(token || '');
+  SGO_V10.sessionExpiresAt = Number(expiresAt || 0);
+  SGO_V10.sessionValidated = Boolean(SGO_V10.sessionToken);
+  if (SGO_V10.sessionToken) storageSet(V12_SESSION_KEY, JSON.stringify({ token: SGO_V10.sessionToken, expiresAt: SGO_V10.sessionExpiresAt }));
+  else storageRemove(V12_SESSION_KEY);
+}
+
+function v12ReadSessionLocal() {
+  try {
+    var raw = storageGet(V12_SESSION_KEY);
+    if (!raw) return null;
+    var session = JSON.parse(raw);
+    if (!session.token || (session.expiresAt && Date.now() >= Number(session.expiresAt))) {
+      storageRemove(V12_SESSION_KEY);
+      return null;
+    }
+    return session;
+  } catch (error) {
+    storageRemove(V12_SESSION_KEY);
+    return null;
+  }
+}
+
+function v12ClearSessionLocal() {
+  v12SaveSessionLocal('', 0);
+  currentUserId = '';
+  storageRemove(CURRENT_USER_KEY);
+  storageRemove(CORPORATE_SESSION_KEY);
+  PREVIOUS_CORPORATE_SESSION_KEYS.forEach(storageRemove);
+  SGO_V10.activeConversationId = '';
+  SGO_V10.presence = [];
+  if (SGO_V10.syncTimer) clearTimeout(SGO_V10.syncTimer);
+  if (SGO_V10.heartbeatTimer) clearInterval(SGO_V10.heartbeatTimer);
+  if (SGO_V10.chatTimer) clearTimeout(SGO_V10.chatTimer);
+}
+
+function v12HandleSessionInvalid(result) {
+  if (!result || result.errorCode !== 'SESSION_INVALID') return false;
+  v12ClearSessionLocal();
+  SGO_V10.remoteReady = true;
+  window.__sgoRemoteReady = true;
+  showLoginScreen(result.message || 'Sua sessão expirou. Entre novamente.');
+  v10SetStatus('checking', 'Aguardando autenticação');
+  return true;
+}
+
+function v12LockIdentitySelector() {
+  var select = document.getElementById('currentUserSelect');
+  if (!select) return;
+  select.value = currentUserId || '';
+  select.disabled = true;
+  select.title = 'A identidade é validada pelo servidor e não pode ser trocada localmente.';
+}
+
+function v12InferTaskAction(change, previousTask) {
+  var hint = SGO_V10.operationContext && SGO_V10.operationContext.taskAction;
+  if (change.deleted || hint === 'delete') return 'delete';
+  if (!previousTask) return hint === 'start' ? 'start' : 'create';
+  var next = change.data || {};
+  if (hint && hint !== 'update') return hint;
+  if (next.status === 'Concluída' && previousTask.status !== 'Concluída') return 'complete';
+  var oldTracking = previousTask.timeTracking || {};
+  var newTracking = next.timeTracking || {};
+  if (oldTracking.state !== 'running' && newTracking.state === 'running') return oldTracking.startedAt ? 'resume' : 'start';
+  if (oldTracking.state === 'running' && newTracking.state === 'paused') return 'pause';
+  return 'update';
+}
+
+function v12TaskServerFunction(action) {
+  var map = {
+    create: 'createTaskServer', update: 'updateTaskServer', start: 'startTaskServer', pause: 'pauseTaskServer',
+    resume: 'resumeTaskServer', complete: 'completeTaskServer', approve: 'approveTaskOperationServer', reject: 'approveTaskOperationServer', delete: 'deleteTaskServer'
+  };
+  return map[action] || 'updateTaskServer';
+}
+
+function v12QueryUnknownOperation(operationId, attemptsLeft) {
+  attemptsLeft = attemptsLeft === undefined ? 3 : attemptsLeft;
+  if (!operationId || !SGO_V10.sessionToken || attemptsLeft <= 0) return;
+  setTimeout(function () {
+    v12ServerCall('getOperationStatusServer', v12SessionPayload({ operationId: operationId }), { timeoutMs: 7000 })
+      .then(function (result) {
+        if (v12HandleSessionInvalid(result)) return;
+        var status = result && result.data && result.data.status;
+        if (status === 'completed' && result.data.result) {
+          v12HandleDedicatedSuccess(result.data.result);
+          return;
+        }
+        if (status === 'processing') v12QueryUnknownOperation(operationId, attemptsLeft - 1);
+      })
+      .catch(function () { if (attemptsLeft > 1) v12QueryUnknownOperation(operationId, attemptsLeft - 1); });
+  }, attemptsLeft === 3 ? 1200 : 2500);
+}
+
+function v10BeginOperation(options) {
+  options = options || {};
+  SGO_V10.operationContext = {
+    pending: true,
+    module: options.module || 'tasks',
+    modalId: options.modalId || '',
+    successTitle: options.successTitle || 'Alteração salva',
+    successMessage: options.successMessage || 'A gravação foi confirmada pelo servidor.',
+    draft: options.draft || null,
+    inputDraft: options.inputDraft || null,
+    taskId: options.taskId || '',
+    taskAction: options.taskAction || '',
+    operationId: options.operationId || v10OperationId(),
+    failed: false,
+    uncertain: false,
+    startedAt: new Date().toISOString()
+  };
+}
+
+function v10FinishOperationSuccess(response) {
+  var context = SGO_V10.operationContext;
+  if (context && context.modalId) {
+    SGO_V10.allowModalClose = true;
+    V10_LEGACY.closeModal(context.modalId);
+    SGO_V10.allowModalClose = false;
+  }
+  v10ClearTaskDraft();
+  if (context) V10_LEGACY.toast(context.successTitle, context.successMessage, 'success');
+  else if (SGO_V10.queuedToast) V10_LEGACY.toast(SGO_V10.queuedToast.title, SGO_V10.queuedToast.message, SGO_V10.queuedToast.type);
+  SGO_V10.operationContext = null;
+  SGO_V10.queuedToast = null;
+  if (response && response.serverTimestamp) window.__sgoLastServerSave = response.serverTimestamp;
+}
+
+function v10HandleCommitFailure(result) {
+  SGO_V10.saveInProgress = false;
+  v10SetTaskSaveLocked(false);
+  if (result && (result.conflict || result.errorCode === 'VERSION_CONFLICT')) {
+    var draft = SGO_V10.taskDraft || (SGO_V10.operationContext && SGO_V10.operationContext.draft);
+    if (result.serverData && result.serverData.tasks) {
+      var failedContext = SGO_V10.operationContext;
+      state = normalizeState(result.serverData);
+      v10EnsureCollections(state);
+      SGO_V10.databaseVersion = Number(result.databaseVersion || state._databaseVersion || SGO_V10.databaseVersion);
+      SGO_V10.lastSyncedState = v10Clone(state);
+      v10PersistLocal(true);
+      populateFilterOptions();
+      renderPage(currentPage);
+      if (draft && document.getElementById('taskModal').classList.contains('open')) v10ApplyTaskDraft(draft);
+      if (failedContext && failedContext.taskId && document.getElementById('taskDetailsModal').classList.contains('open')) {
+        renderTaskDetails(failedContext.taskId);
+        var inputDraft = failedContext.inputDraft || {};
+        if (inputDraft.feedbackText && document.getElementById('v10FeedbackText')) document.getElementById('v10FeedbackText').value = inputDraft.feedbackText;
+        if (inputDraft.taskMessageText && document.getElementById('v10TaskMessageText')) document.getElementById('v10TaskMessageText').value = inputDraft.taskMessageText;
+      }
+      if (failedContext && failedContext.inputDraft && failedContext.inputDraft.chatText && currentPage === 'chat') {
+        v10RenderChat();
+        if (document.getElementById('v10ChatText')) document.getElementById('v10ChatText').value = failedContext.inputDraft.chatText;
+      }
+    }
+    v10ShowTaskConflict(result);
+  } else {
+    v10SetStatus(navigator.onLine ? 'error' : 'offline', result && result.message || 'Não foi possível confirmar a gravação.');
+    V10_LEGACY.toast('Falha ao salvar', result && result.message || 'A operação não foi confirmada pelo servidor.', 'error');
+  }
+  SGO_V10.operationContext = null;
+  SGO_V10.queuedToast = null;
+}
+
+
+function v12HandleDedicatedSuccess(result) {
+  SGO_V10.saveInProgress = false;
+  SGO_V10.preflightInProgress = false;
+  v10SetTaskSaveLocked(false);
+  if (!result || !result.success || !result.confirmed) {
+    v10HandleCommitFailure(result || { message: 'O servidor não confirmou a operação.' });
+    return;
+  }
+  var base = v10EnsureCollections(v10Clone(SGO_V10.lastSyncedState || state || {}));
+  state = normalizeState(base);
+  v10EnsureCollections(state);
+  v12ApplyChangedRecords(result.data && result.data.changedRecords || []);
+  SGO_V10.databaseVersion = Number(result.databaseVersion || SGO_V10.databaseVersion || 0);
+  state._databaseVersion = SGO_V10.databaseVersion;
+  SGO_V10.lastSyncedState = v10Clone(state);
+  SGO_V10.lastSyncAt = result.serverTimestamp || new Date().toISOString();
+  v12RefreshAfterPatch();
+  v10SetStatus('updated');
+  v10FinishOperationSuccess(result);
+  setTimeout(function () { v10SyncNow(false); }, 80);
+}
+
+function v12CommitTaskChanges(taskChanges) {
+  var context = SGO_V10.operationContext || {};
+  var base = v10EnsureCollections(v10Clone(SGO_V10.lastSyncedState || {}));
+  var baseTasks = v10MapById(base.tasks || []);
+  var accumulated = [];
+  var index = 0;
+
+  function next() {
+    if (index >= taskChanges.length) {
+      var combined = {
+        success: true,
+        confirmed: true,
+        operationId: context.operationId || '',
+        databaseVersion: SGO_V10.databaseVersion,
+        serverTimestamp: new Date().toISOString(),
+        data: { changedRecords: accumulated }
+      };
+      v12HandleDedicatedSuccess(combined);
+      return;
+    }
+    var change = taskChanges[index];
+    var previousTask = baseTasks[change.id] || null;
+    var action = v12InferTaskAction(change, previousTask);
+    var operationId = taskChanges.length === 1 ? (context.operationId || v10OperationId()) : (context.operationId || v10OperationId()) + ':' + index;
+    var payload = v12SessionPayload({
+      operationId: operationId,
+      taskId: change.id,
+      expectedVersion: Number(change.expectedVersion || 0),
+      action: action,
+      task: change.data,
+      deleted: Boolean(change.deleted),
+      approved: action !== 'reject'
+    });
+    var functionName = v12TaskServerFunction(action);
+    v12ServerCall(functionName, payload, { timeoutMs: 12000, timeoutMessage: 'A gravação da tarefa está demorando mais que o normal.' })
+      .then(function (result) {
+        if (v12HandleSessionInvalid(result)) throw new Error('SESSION_INVALID');
+        if (!result || !result.success || !result.confirmed) {
+          v10HandleCommitFailure(result || { message: 'A tarefa não foi confirmada.' });
+          return;
+        }
+        SGO_V10.databaseVersion = Number(result.databaseVersion || SGO_V10.databaseVersion || 0);
+        if (result && result.data && result.data.sequenceCursorSafe === true) SGO_V10.changeSequence = Math.max(Number(SGO_V10.changeSequence || 0), Number(result.data.sequence || 0));
+        accumulated = accumulated.concat(result.data && result.data.changedRecords || []);
+        index += 1;
+        next();
+      })
+      .catch(function (error) {
+        if (String(error && error.message || '') === 'SESSION_INVALID') return;
+        SGO_V10.saveInProgress = false;
+        v10SetTaskSaveLocked(false);
+        if (error && error.code === 'CLIENT_TIMEOUT') {
+          if (SGO_V10.operationContext) {
+            SGO_V10.operationContext.pending = false;
+            SGO_V10.operationContext.uncertain = true;
+            SGO_V10.operationContext.failed = true;
+          }
+          v10SetStatus('error', 'Resultado ainda não confirmado');
+          V10_LEGACY.toast('A confirmação está demorando', 'Seu conteúdo foi preservado. O SGO verificará a operação antes de permitir uma nova tentativa.', 'error');
+          v12QueryUnknownOperation(operationId, 3);
+        } else {
+          v10HandleCommitFailure({ message: error && error.message || 'Falha de conexão com o servidor.' });
+        }
+      });
+  }
+  next();
+}
+
+function v12CommitGenericChanges(diff) {
+  var context = SGO_V10.operationContext || {};
+  var operationId = context.operationId || v10OperationId();
+  var payload = v12SessionPayload({
+    databaseVersion: Number(SGO_V10.databaseVersion || 0),
+    operationId: operationId,
+    module: context.module || (diff.changes[0] && diff.changes[0].collection) || 'system',
+    changes: diff.changes,
+    systemPatch: diff.systemPatch
+  });
+  v12ServerCall('commitStateChangesServer', payload, { timeoutMs: 15000 })
+    .then(function (result) {
+      SGO_V10.saveInProgress = false;
+      if (v12HandleSessionInvalid(result)) return;
+      if (!result || !result.success || !result.confirmed) {
+        v10HandleCommitFailure(result || { message: 'O servidor não confirmou a operação.' });
+        return;
+      }
+      if (result.data && result.data.state) {
+        v12ApplyState(result.data.state, result.databaseVersion, SGO_V10.changeSequence);
+      } else {
+        v12ApplyChangedRecords(result.data && result.data.changedRecords || []);
+        SGO_V10.databaseVersion = Number(result.databaseVersion || SGO_V10.databaseVersion || 0);
+        if (result && result.data && result.data.sequenceCursorSafe === true) SGO_V10.changeSequence = Math.max(Number(SGO_V10.changeSequence || 0), Number(result.data.sequence || 0));
+        state._databaseVersion = SGO_V10.databaseVersion;
+        SGO_V10.lastSyncedState = v10Clone(state);
+      }
+      SGO_V10.lastSyncAt = result.serverTimestamp || new Date().toISOString();
+      v12RefreshAfterPatch();
+      v10SetStatus('updated');
+      v10FinishOperationSuccess(result);
+      setTimeout(function () { v10SyncNow(false); }, 80);
+    })
+    .catch(function (error) {
+      SGO_V10.saveInProgress = false;
+      v10SetTaskSaveLocked(false);
+      if (error && error.code === 'CLIENT_TIMEOUT') {
+        if (SGO_V10.operationContext) {
+          SGO_V10.operationContext.pending = false;
+          SGO_V10.operationContext.uncertain = true;
+          SGO_V10.operationContext.failed = true;
+        }
+        v10SetStatus('error', 'Resultado ainda não confirmado');
+        V10_LEGACY.toast('A confirmação está demorando', 'Os dados continuam preservados. O sistema verificará a operação automaticamente.', 'error');
+        v12QueryUnknownOperation(operationId, 3);
+      } else {
+        v10HandleCommitFailure({ message: error && error.message || 'Falha de conexão com o servidor.' });
+      }
+    });
+}
+
+function v10CommitPendingChanges() {
+  if (SGO_V10.bootstrapping || !runningInGoogleAppsScript() || !SGO_V10.remoteReady || !SGO_V10.sessionValidated) return;
+  if (SGO_V10.saveInProgress) { SGO_V10.saveQueued = true; return; }
+  var diff = v10BuildDiff();
+  if (!diff.changes.length && !Object.keys(diff.systemPatch).length) {
+    v10SetStatus('updated');
+    return;
+  }
+  var taskChanges = diff.changes.filter(function (change) { return change.collection === 'tasks'; });
+  var nonTaskChanges = diff.changes.filter(function (change) { return change.collection !== 'tasks'; });
+  /*
+   * Coleções abaixo podem mudar em segundo plano enquanto a tarefa está aberta.
+   * Elas possuem gravação/sincronização próprias e não podem transformar uma
+   * mensagem recebida ou uma notificação em falso conflito de tarefa.
+   */
+  var independentlySynced = {
+    activity:true, securityLog:true, notifications:true, audits:true,
+    messages:true, conversations:true, conversationReads:true, errors:true
+  };
+  var unsafeMixed = taskChanges.length && nonTaskChanges.some(function (change) {
+    return !independentlySynced[change.collection];
+  });
+  if (unsafeMixed) {
+    SGO_V10.saveInProgress = false;
+    SGO_V10.preflightInProgress = false;
+    v10SetTaskSaveLocked(false);
+    if (SGO_V10.operationContext) {
+      SGO_V10.operationContext.pending = false;
+      SGO_V10.operationContext.failed = true;
+    }
+    var mixedCollections = nonTaskChanges.filter(function (change) {
+      return !independentlySynced[change.collection];
+    }).map(function (change) { return change.collection; });
+    v10SetStatus('error', 'Alterações incompatíveis na mesma operação');
+    V10_LEGACY.toast('Gravação separada necessária', 'Há outra alteração local pendente (' + mixedCollections.join(', ') + '). O formulário foi preservado e liberado para nova tentativa.', 'error');
+    SGO_V10.operationContext = null;
+    return;
+  }
+  SGO_V10.saveInProgress = true;
+  SGO_V10.saveQueued = false;
+  v10SetTaskSaveLocked(true);
+  v10SetStatus('saving', 'Aguardando confirmação do servidor');
+  v10RecordAction('Gravação enviada ao servidor.');
+  if (taskChanges.length) v12CommitTaskChanges(taskChanges);
+  else v12CommitGenericChanges(diff);
+}
+
+function v10SaveState(options) {
+  options = options || {};
+  state.version = 12;
+  v10EnsureCollections(state);
+  var localSaved = v10PersistLocal(options.silent !== false);
+  if (SGO_V10.bootstrapping || !runningInGoogleAppsScript()) return localSaved;
+  if (!SGO_V10.remoteReady) {
+    v10SetStatus(navigator.onLine ? 'error' : 'offline', 'A gravação no servidor está bloqueada.');
+    if (SGO_V10.operationContext) {
+      SGO_V10.operationContext.pending = false;
+      SGO_V10.operationContext.failed = true;
+    }
+    V10_LEGACY.toast('Gravação bloqueada', 'O servidor não confirmou uma base atualizada. Nenhuma alteração foi gravada.', 'error');
+    setTimeout(function () {
+      if (SGO_V10.lastSyncedState) {
+        state = normalizeState(v10Clone(SGO_V10.lastSyncedState));
+        v10EnsureCollections(state);
+        v10PersistLocal(true);
+        populateFilterOptions();
+        renderPage(currentPage);
+      }
+    }, 0);
+    return false;
+  }
+  var diff = v10BuildDiff();
+  if (!diff.changes.length && !Object.keys(diff.systemPatch).length) return localSaved;
+  v10SetStatus('pending', diff.changes.length + ' alteração(ões) pendente(s)');
+  if (window.__sgoServerSaveTimer) clearTimeout(window.__sgoServerSaveTimer);
+  window.__sgoServerSaveTimer = setTimeout(v10CommitPendingChanges, 60);
+  return localSaved;
+}
+
+function v10ApplyServerSnapshot(result, draft) {
+  if (!result || !result.success || !result.confirmed) {
+    if (!v12HandleSessionInvalid(result)) v10SetStatus('error', result && result.message || 'Resposta inválida do servidor.');
+    return;
+  }
+  if (result.data && !result.data.noChange && result.data.state) {
+    v12ApplyState(result.data.state, result.databaseVersion, result.data.sequence || SGO_V10.changeSequence);
+    applyBranding();
+    populateFilterOptions();
+    renderPage(currentPage);
+    renderTopbarUser();
+    renderTimerDock();
+    v12LockIdentitySelector();
+    if (draft && draft.taskId !== undefined) {
+      var taskId = draft.taskId;
+      if (!document.getElementById('taskModal').classList.contains('open')) openTaskModal(taskId || '');
+      setTimeout(function () { v10ApplyTaskDraft(draft); }, 30);
+    }
+  } else {
+    SGO_V10.databaseVersion = Number(result.databaseVersion || SGO_V10.databaseVersion || 0);
+    SGO_V10.lastSyncAt = result.serverTimestamp || new Date().toISOString();
+  }
+  v10SetStatus('updated');
+  v10RenderNotifications();
+}
+
+function v10SyncNow(forceFull) {
+  if (!runningInGoogleAppsScript() || !SGO_V10.remoteReady || !SGO_V10.sessionValidated) {
+    if (!SGO_V10.sessionValidated) v10SetStatus('checking', 'Aguardando autenticação');
+    return;
+  }
+  if (SGO_V10.syncInProgress || SGO_V10.saveInProgress) return;
+  SGO_V10.syncInProgress = true;
+  v10SetStatus('syncing', 'Consultando o servidor');
+  var draft = SGO_V10.dirtyTaskForm ? v10CaptureTaskDraft() : null;
+  var shouldFull = Boolean(forceFull) || !SGO_V10.changeSequence || (Date.now() - Number(SGO_V10.lastFullSyncAt || 0) > 1800000);
+
+  if (shouldFull) {
+    v12ServerCall('getSyncSnapshotServer', v12SessionPayload({ databaseVersion: Number(SGO_V10.databaseVersion || 0), force: Boolean(forceFull) }), { timeoutMs: 15000 })
+      .then(function (result) {
+        SGO_V10.syncInProgress = false;
+        if (result && result.success && result.data && !result.data.noChange) SGO_V10.lastFullSyncAt = Date.now();
+        v10ApplyServerSnapshot(result, draft);
+      })
+      .catch(function (error) {
+        SGO_V10.syncInProgress = false;
+        v10SetStatus(navigator.onLine ? 'error' : 'offline', error && error.message || 'Falha de conexão.');
+      });
+    return;
+  }
+
+  var pageCount = 0;
+  var allChanges = [];
+  var cursor = Number(SGO_V10.changeSequence || 0);
+  function loadPage() {
+    pageCount += 1;
+    v12ServerCall('getChangesSinceServer', v12SessionPayload({ sequence: cursor, limit: 250 }), { timeoutMs: 12000 })
+      .then(function (result) {
+        if (v12HandleSessionInvalid(result)) { SGO_V10.syncInProgress = false; return; }
+        if (!result || !result.success) throw new Error(result && result.message || 'Falha na sincronização.');
+        var data = result.data || {};
+        allChanges = allChanges.concat(data.changes || []);
+        cursor = Number(data.sequence || cursor);
+        if (data.hasMore && pageCount < 10) { loadPage(); return; }
+        var changedOpenTask = false;
+        var openTaskId = document.getElementById('taskId') ? document.getElementById('taskId').value : '';
+        allChanges.forEach(function (change) {
+          if (change.collection === 'tasks' && openTaskId && String(change.id) === String(openTaskId)) changedOpenTask = true;
+          v12PatchCollection(change.collection, change.id, change.data, Boolean(change.deleted));
+        });
+        SGO_V10.changeSequence = cursor;
+        SGO_V10.databaseVersion = Number(result.databaseVersion || SGO_V10.databaseVersion || 0);
+        state._databaseVersion = SGO_V10.databaseVersion;
+        state._changeSequence = cursor;
+        SGO_V10.lastSyncedState = v10Clone(state);
+        SGO_V10.lastSyncAt = result.serverTimestamp || new Date().toISOString();
+        SGO_V10.syncInProgress = false;
+        if (allChanges.length) {
+          v12RefreshAfterPatch();
+          if (draft) setTimeout(function () { v10ApplyTaskDraft(draft); }, 20);
+        }
+        if (changedOpenTask && draft) v10ShowTaskConflict({ message: 'Esta tarefa foi atualizada por outro usuário enquanto o formulário estava aberto.' });
+        v10SetStatus('updated');
+      })
+      .catch(function (error) {
+        SGO_V10.syncInProgress = false;
+        v10SetStatus(navigator.onLine ? 'error' : 'offline', error && error.message || 'Falha de conexão.');
+      });
+  }
+  loadPage();
+}
+
+function v10StartBackgroundServices() {
+  if (SGO_V10.syncTimer) clearTimeout(SGO_V10.syncTimer);
+  if (SGO_V10.heartbeatTimer) clearInterval(SGO_V10.heartbeatTimer);
+  if (SGO_V10.chatTimer) clearTimeout(SGO_V10.chatTimer);
+  if (!SGO_V10.sessionValidated) return;
+
+  function scheduleSync() {
+    if (!SGO_V10.sessionValidated) return;
+    var hidden = document.hidden;
+    var delay = hidden ? 60000 : (currentPage === 'chat' ? 15000 : 12000);
+    delay += Math.floor(Math.random() * 3000);
+    SGO_V10.syncTimer = setTimeout(function () {
+      v10SyncNow(false);
+      scheduleSync();
+    }, delay);
+  }
+  scheduleSync();
+
+  var heartbeat = function () {
+    if (!runningInGoogleAppsScript() || !SGO_V10.remoteReady || !SGO_V10.sessionValidated || !currentUser()) return;
+    var detailsModal = document.getElementById('taskDetailsModal');
+    var activeTaskId = detailsModal && detailsModal.classList.contains('open') ? document.getElementById('taskDetailsId').value : '';
+    v12ServerCall('heartbeatServer', v12SessionPayload({ page:currentPage, activeTaskId:activeTaskId, syncStatus:SGO_V10.status, databaseVersion:Number(SGO_V10.databaseVersion||0) }), { timeoutMs:7000 }).then(function(result){v12HandleSessionInvalid(result);}).catch(function(){});
+  };
+  heartbeat();
+  SGO_V10.heartbeatTimer = setInterval(heartbeat, 30000);
+  v12ScheduleChatPolling();
+}
+
+function v10RenderNotifications() {
+  var user = currentUser();
+  if (!user) return;
+  var items = (state.notifications || []).filter(function (item) { return item.userId === user.id; })
+    .sort(function (a, b) { return new Date(b.createdAt || b._serverUpdatedAt) - new Date(a.createdAt || a._serverUpdatedAt); });
+  var unread = items.filter(function (item) { return !item.read; }).length;
+  var badge = document.getElementById('v10NotificationBadge');
+  if (badge) {
+    badge.textContent = unread > 99 ? '99+' : String(unread);
+    badge.classList.toggle('hidden', unread === 0);
+  }
+  var list = document.getElementById('v10NotificationList');
+  if (list) {
+    list.innerHTML = items.length ? items.slice(0, 50).map(function (item) {
+      return '<button class="v10-notification-item ' + (!item.read ? 'unread' : '') + '" type="button" data-v10-notification="' + escapeHTML(item.id) + '"><div><strong>' + escapeHTML(item.title || 'Notificação') + '</strong><p>' + escapeHTML(item.description || '') + '</p><time>' + escapeHTML(formatDateTime(item.createdAt || item._serverUpdatedAt)) + '</time></div></button>';
+    }).join('') : detailEmpty('Nenhuma notificação encontrada.');
+  }
+  var chatBadge = document.getElementById('badgeChat');
+  if (chatBadge) {
+    var unreadMessages = (state.messages || []).filter(function (message) {
+      return Array.isArray(message.recipientIds) && message.recipientIds.indexOf(user.id) >= 0 && !(message.readBy || []).includes(user.id);
+    }).length;
+    chatBadge.textContent = String(unreadMessages);
+  }
+}
+
+function v10MarkNotificationRead(notificationId) {
+  if (!v10CanStartWrite('atualizar a notificação')) return;
+  var item = (state.notifications || []).find(function (notification) { return notification.id === notificationId; });
+  if (!item || item.read) return;
+  item.read = true;
+  item.readAt = new Date().toISOString();
+  v10BeginOperation({ module: 'notifications', successTitle: 'Notificação atualizada', successMessage: 'A notificação foi marcada como lida.' });
+  saveState({ silent: true });
+  if (item.referenceId) {
+    var task = state.tasks.find(function (candidate) { return candidate.id === item.referenceId || candidate.code === item.referenceId; });
+    if (task) openTaskDetails(task.id);
+  }
+}
+
+function v10MarkAllNotificationsRead() {
+  if (!v10CanStartWrite('atualizar as notificações')) return;
+  var user = currentUser();
+  var changed = false;
+  (state.notifications || []).forEach(function (item) {
+    if (item.userId === user.id && !item.read) {
+      item.read = true;
+      item.readAt = new Date().toISOString();
+      changed = true;
+    }
+  });
+  if (!changed) return;
+  v10BeginOperation({ module: 'notifications', successTitle: 'Notificações atualizadas', successMessage: 'Todas foram marcadas como lidas.' });
+  saveState({ silent: true });
+}
+
+function v10FeedbacksForTask(taskId) {
+  return (state.feedbacks || []).filter(function (item) { return item.taskId === taskId; })
+    .sort(function (a, b) { return new Date(b.createdAt || b._serverUpdatedAt) - new Date(a.createdAt || a._serverUpdatedAt); });
+}
+
+function v10MessagesForTask(taskId) {
+  return (state.messages || []).filter(function (item) { return item.taskId === taskId; })
+    .sort(function (a, b) { return new Date(a.createdAt || a._serverUpdatedAt) - new Date(b.createdAt || b._serverUpdatedAt); });
+}
+
+function v10RenderTaskExtensions(taskId) {
+  var content = document.getElementById('taskDetailsContent');
+  var task = state.tasks.find(function (item) { return item.id === taskId; });
+  if (!content || !task) return;
+  var mainStack = content.querySelector('.detail-layout > .detail-stack');
+  if (!mainStack) return;
+  var feedbacks = v10FeedbacksForTask(taskId);
+  var messages = v10MessagesForTask(taskId);
+  var peopleOptions = state.collaborators.filter(function (person) { return person.ativo; }).map(function (person) {
+    return '<option value="' + escapeHTML(person.id) + '" ' + (person.id === task.responsavelId ? 'selected' : '') + '>' + escapeHTML(person.nome) + '</option>';
+  }).join('');
+  var typeOptions = V10_FEEDBACK_TYPES.map(function (type) { return '<option>' + escapeHTML(type) + '</option>'; }).join('');
+  var feedbackHtml = feedbacks.length ? feedbacks.map(function (feedback) {
+    var canManage = feedback.autorId === currentUser().id || feedback.destinatarioId === currentUser().id || can('manageSystem');
+    var readAction = feedback.destinatarioId === currentUser().id && !feedback.read ? '<button class="btn btn-outline btn-sm" type="button" data-v10-feedback-read="' + escapeHTML(feedback.id) + '">Marcar como lido</button>' : '';
+    var statusControl = canManage ? '<select class="control v10-feedback-status" data-v10-feedback-status="' + escapeHTML(feedback.id) + '">' + V10_FEEDBACK_STATUS.map(function (status) { return '<option ' + (status === feedback.status ? 'selected' : '') + '>' + escapeHTML(status) + '</option>'; }).join('') + '</select>' : '';
+    return '<article class="v10-feedback-card ' + (!feedback.read && feedback.destinatarioId === currentUser().id ? 'unread' : '') + '"><div class="v10-feedback-head"><strong>' + escapeHTML(personName(feedback.autorId)) + ' → ' + escapeHTML(personName(feedback.destinatarioId)) + '</strong><span>' + escapeHTML(formatDateTime(feedback.createdAt || feedback._serverUpdatedAt)) + '</span></div><p>' + escapeHTML(feedback.texto || '') + '</p><div class="v10-feedback-meta"><span class="badge badge-primary">' + escapeHTML(feedback.tipo || 'Observação') + '</span><span class="badge ' + ((feedback.status || '').toLocaleLowerCase('pt-BR').includes('vencido') ? 'badge-red' : 'badge-blue') + '">' + escapeHTML(feedback.status || 'Novo feedback') + '</span>' + (feedback.responseDue ? '<span class="badge badge-gray">Prazo: ' + escapeHTML(formatDate(feedback.responseDue)) + '</span>' : '') + '</div>' + (readAction || statusControl ? '<div class="v10-feedback-actions">' + statusControl + readAction + '</div>' : '') + '</article>';
+  }).join('') : detailEmpty('Ainda não há feedbacks nesta tarefa.');
+  var messageHtml = messages.length ? messages.slice(-80).map(function (message) {
+    return '<article class="v10-message-card ' + (message.authorId === currentUser().id ? 'mine' : '') + '"><div class="v10-message-head"><strong>' + escapeHTML(personName(message.authorId)) + '</strong><span>' + escapeHTML(formatDateTime(message.createdAt || message._serverUpdatedAt)) + '</span></div><p>' + escapeHTML(message.texto || '') + '</p></article>';
+  }).join('') : detailEmpty('Nenhuma mensagem vinculada à tarefa.');
+
+  var feedbackSection = document.createElement('section');
+  feedbackSection.className = 'detail-section';
+  feedbackSection.id = 'v10TaskFeedbackSection';
+  feedbackSection.innerHTML = '<div class="detail-section-head"><h4><i data-lucide="message-square-reply"></i>Feedback de retorno</h4><span class="small muted">' + feedbacks.length + '</span></div><div class="v10-feedback-list">' + feedbackHtml + '</div><div class="v10-composer"><div class="v10-composer-row"><select class="control" id="v10FeedbackRecipient">' + peopleOptions + '</select><select class="control" id="v10FeedbackType">' + typeOptions + '</select><input class="control" id="v10FeedbackDue" type="date" title="Prazo para resposta"></div><textarea class="control" id="v10FeedbackText" maxlength="1500" placeholder="Registre o retorno, orientação ou correção necessária..."></textarea><div class="v10-composer-row"><label class="check-row"><input type="checkbox" id="v10FeedbackNeedsResponse"><span>Necessita resposta</span></label><button class="btn btn-secondary" id="v10AddFeedback" type="button"><i data-lucide="send"></i>Enviar feedback</button></div></div>';
+  mainStack.appendChild(feedbackSection);
+
+  var chatSection = document.createElement('section');
+  chatSection.className = 'detail-section';
+  chatSection.id = 'v10TaskChatSection';
+  chatSection.innerHTML = '<div class="detail-section-head"><h4><i data-lucide="messages-square"></i>Conversa da tarefa</h4><span class="small muted">' + messages.length + '</span></div><div class="v10-chat-messages" id="v10TaskMessages">' + messageHtml + '</div><div class="v10-chat-compose"><textarea class="control" id="v10TaskMessageText" maxlength="2000" placeholder="Escreva uma mensagem. Use @nome para mencionar alguém."></textarea><button class="btn btn-primary" id="v10SendTaskMessage" type="button"><i data-lucide="send"></i>Enviar</button></div>';
+  mainStack.appendChild(chatSection);
+
+  var historySection = document.createElement('section');
+  historySection.className = 'detail-section';
+  historySection.id = 'v10UnifiedHistorySection';
+  historySection.innerHTML = '<div class="detail-section-head"><h4><i data-lucide="history"></i>Histórico unificado</h4></div>' + v10BuildUnifiedHistoryHtml(task, feedbacks, messages);
+  mainStack.appendChild(historySection);
+  refreshIcons();
+  var messageBox = document.getElementById('v10TaskMessages');
+  if (messageBox) messageBox.scrollTop = messageBox.scrollHeight;
+}
+
+function v10AddFeedback() {
+  if (!v10CanStartWrite('enviar o feedback')) return;
+  var taskId = document.getElementById('taskDetailsId').value;
+  var text = document.getElementById('v10FeedbackText').value.trim();
+  var recipientId = document.getElementById('v10FeedbackRecipient').value;
+  if (!taskId || !text || !recipientId) {
+    V10_LEGACY.toast('Feedback incompleto', 'Informe o destinatário e o texto do retorno.', 'error');
+    return;
+  }
+  var needsResponse = document.getElementById('v10FeedbackNeedsResponse').checked;
+  var type = document.getElementById('v10FeedbackType').value;
+  var status = type === 'Correção necessária' ? 'Correção solicitada' : (needsResponse ? 'Aguardando resposta' : 'Novo feedback');
+  var feedback = {
+    id: id('feedback'), taskId: taskId, autorId: currentUser().id, destinatarioId: recipientId,
+    texto: text, createdAt: new Date().toISOString(), tipo: type,
+    needsResponse: needsResponse, responseDue: document.getElementById('v10FeedbackDue').value,
+    links: [], read: false, readAt: '', status: status, _recordVersion: 0
+  };
+  state.feedbacks.push(feedback);
+  v10BeginOperation({ module: 'feedbacks', successTitle: 'Feedback enviado', successMessage: 'O retorno foi confirmado pelo servidor.', taskId: taskId, inputDraft: { feedbackText: text } });
+  saveState();
+}
+
+function v10TaskRecipients(task) {
+  var recipients = [];
+  if (task && task.responsavelId && task.responsavelId !== currentUser().id) recipients.push(task.responsavelId);
+  (task && Array.isArray(task.participantes) ? task.participantes : []).forEach(function (personId) {
+    if (personId !== currentUser().id && recipients.indexOf(personId) < 0) recipients.push(personId);
+  });
+  return recipients;
+}
+
+function v10SendTaskMessage() {
+  if (!v10CanStartWrite('enviar a mensagem')) return;
+  var taskId = document.getElementById('taskDetailsId').value;
+  var field = document.getElementById('v10TaskMessageText');
+  var text = field ? field.value.trim() : '';
+  var task = state.tasks.find(function (item) { return item.id === taskId; });
+  if (!task || !text) return;
+  var message = {
+    id: id('message'), conversationId: 'task:' + taskId, conversationType: 'task', taskId: taskId,
+    authorId: currentUser().id, recipientIds: v10TaskRecipients(task), texto: text,
+    createdAt: new Date().toISOString(), replyToId: '', readBy: [currentUser().id], editedAt: '', deleted: false, _recordVersion: 0
+  };
+  state.messages.push(message);
+  v10BeginOperation({ module: 'messages', successTitle: 'Mensagem enviada', successMessage: 'A mensagem foi registrada no histórico da tarefa.', taskId: taskId, inputDraft: { taskMessageText: text } });
+  saveState();
+}
+
+function v10BuildUnifiedHistoryHtml(task, feedbacks, messages) {
+  var events = [];
+  (Array.isArray(task.historico) ? task.historico : []).forEach(function (event) {
+    events.push({ at: event.at || event.createdAt || '', userId: event.userId || '', type: 'Tarefa', description: event.action || 'Alteração na tarefa', immutable: false });
+  });
+  feedbacks.forEach(function (feedback) {
+    events.push({ at: feedback.createdAt || feedback._serverUpdatedAt || '', userId: feedback.autorId || '', type: 'Feedback · ' + (feedback.tipo || 'Observação'), description: feedback.texto || '', immutable: true });
+  });
+  messages.forEach(function (message) {
+    events.push({ at: message.createdAt || message._serverUpdatedAt || '', userId: message.authorId || '', type: 'Mensagem', description: message.texto || '', immutable: true });
+  });
+  events.sort(function (a, b) { return new Date(b.at) - new Date(a.at); });
+  if (!events.length) return detailEmpty('Nenhum evento registrado.');
+  return '<div class="timeline">' + events.slice(0, 200).map(function (event) {
+    return '<div class="timeline-item"><div class="timeline-dot"></div><div><div class="timeline-head"><strong>' + escapeHTML(event.type) + '</strong><span>' + escapeHTML(formatDateTime(event.at)) + '</span></div><p>' + escapeHTML(event.description) + '</p><small>' + escapeHTML(personName(event.userId)) + (event.immutable ? ' · registro individual protegido' : '') + '</small></div></div>';
+  }).join('') + '</div>';
+}
+
+function v10UpdateFeedback(feedbackId, patch) {
+  if (!v10CanStartWrite('atualizar o feedback')) return;
+  var feedback = (state.feedbacks || []).find(function (item) { return item.id === feedbackId; });
+  if (!feedback) return;
+  Object.keys(patch || {}).forEach(function (key) { feedback[key] = patch[key]; });
+  feedback.updatedAt = new Date().toISOString();
+  v10BeginOperation({ module: 'feedbacks', successTitle: 'Feedback atualizado', successMessage: 'A situação do retorno foi confirmada pelo servidor.', taskId: feedback.taskId });
+  saveState({ silent: true });
+}
+
+function v10CanViewTask(taskId) {
+  return visibleTasks().some(function (task) { return task.id === taskId; });
+}
+
+
+function v12ConversationRecord(conversationId) {
+  return (state.conversations || []).find(function (item) { return item && String(item.id) === String(conversationId); }) || null;
+}
+
+function v12ConversationRead(conversationId) {
+  var user = currentUser();
+  if (!user) return null;
+  return (state.conversationReads || []).find(function (item) { return item && String(item.conversationId) === String(conversationId) && String(item.userId) === String(user.id); }) || null;
+}
+
+function v12ConversationUnreadCount(conversationId, messages) {
+  var user = currentUser();
+  if (!user) return 0;
+  var read = v12ConversationRead(conversationId) || {};
+  var lastSequence = Number(read.lastReadSequence || 0);
+  var lastReadAt = new Date(read.lastReadAt || 0).getTime();
+  return (messages || []).filter(function (message) {
+    if (!message || message.authorId === user.id) return false;
+    var sequence = Number(message._messageSequence || 0);
+    if (sequence) return sequence > lastSequence;
+    return new Date(message.createdAt || message._serverUpdatedAt || 0).getTime() > lastReadAt;
+  }).length;
+}
+
+function v12MergeUniqueRecords(collection, records) {
+  if (!Array.isArray(state[collection])) state[collection] = [];
+  (records || []).forEach(function (record) {
+    if (!record || !record.id) return;
+    var index = state[collection].findIndex(function (item) { return item && String(item.id) === String(record.id); });
+    if (index >= 0) state[collection][index] = v10Clone(record);
+    else state[collection].push(v10Clone(record));
+  });
+}
+
+/*
+ * Mantém a base de comparação alinhada com dados confirmados pelo servidor
+ * que chegam por canais independentes (chat, conversas, leituras e notificações).
+ * Sem isso, uma mensagem recebida enquanto o formulário está aberto aparece no
+ * diff como uma alteração local e bloqueia indevidamente o salvamento da tarefa.
+ */
+function v12ConfirmBaselineCollections(collections) {
+  if (!SGO_V10.lastSyncedState) SGO_V10.lastSyncedState = v10Clone(state || {});
+  v10EnsureCollections(SGO_V10.lastSyncedState);
+  (collections || []).forEach(function (collection) {
+    if (V10_TRACKED_COLLECTIONS.indexOf(collection) < 0) return;
+    SGO_V10.lastSyncedState[collection] = v10Clone(Array.isArray(state[collection]) ? state[collection] : []);
+  });
+}
+
+
+function v12152MergeDeferredBootstrap(data) {
+  data = data || {};
+  ['feedbacks','audits','activity','errors','securityLog'].forEach(function (collection) {
+    if (Array.isArray(data[collection])) state[collection] = data[collection];
+  });
+  state._deferredPending = false;
+  try { v12ConfirmBaselineCollections(['feedbacks','audits','activity','errors','securityLog']); } catch (ignored) {}
+  try { v10PersistLocal(true); } catch (ignored) {}
+  try { renderPage(currentPage); } catch (ignored) {}
+}
+
+function v1216RunPostLoginWhenIdle(work, initialDelay, maxDeferrals) {
+  var deferrals = 0;
+  function attempt() {
+    if (!SGO_V10.sessionValidated) return;
+    var busy = Boolean(SGO_V10.saveInProgress || SGO_V10.queueEnqueueInProgress || SGO_V10.queueProcessing);
+    if (busy && deferrals < Math.max(1, Number(maxDeferrals || 6))) {
+      deferrals += 1;
+      setTimeout(attempt, 750);
+      return;
+    }
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(function(){ if (SGO_V10.sessionValidated) work(); }, {timeout:1500});
+    } else {
+      work();
+    }
+  }
+  setTimeout(attempt, Math.max(0, Number(initialDelay || 0)));
+}
+
+function v12152StartPostLoginLoads(options) {
+  options = options || {};
+  var loginPerf = options.loginPerf || {};
+  try {
+    var serverMs = Number(loginPerf.totalMs || 0);
+    var details = loginPerf.coreBreakdown || {};
+    v128DiagEvent(serverMs >= 1800 ? 'WARN' : 'INFO', 'login', 'LOGIN_CORE_READY', {
+      durationMs:serverMs,
+      status:serverMs >= 1800 ? 'slow' : 'ready',
+      message:'Tela principal liberada; módulos secundários carregam em segundo plano.',
+      context:{configMs:loginPerf.configMs||0,authCollaboratorsMs:loginPerf.authCollaboratorsMs||0,coreMs:loginPerf.coreMs||0,breakdown:details}
+    });
+  } catch (ignored) {}
+
+  if (options.needsCredentialMigration && options.pin) {
+    var migrationPin = String(options.pin);
+    v1216RunPostLoginWhenIdle(function () {
+      v12ServerCall('migrateMyCredentialAfterLoginServer', v12SessionPayload({pin:migrationPin}), {timeoutMs:12000})
+        .catch(function () {})
+        .finally(function () { migrationPin = ''; });
+    }, 4000, 8);
+  }
+  // Chat/notificações entram após a interface estar livre. Se o usuário começar
+  // a salvar imediatamente após o login, essa carga cede prioridade à gravação.
+  v1216RunPostLoginWhenIdle(function () {
+    v12LoadCommunicationBootstrap();
+  }, 800, 4);
+  // Auditoria, atividade, feedbacks e logs são menos urgentes e mais pesados.
+  v1216RunPostLoginWhenIdle(function () {
+    v12ServerCall('loadDeferredBootstrapServer', v12SessionPayload({}), {timeoutMs:15000})
+      .then(function (result) {
+        if (v12HandleSessionInvalid(result)) return;
+        if (!result || !result.success) throw new Error(result && result.message || 'Falha ao carregar dados complementares.');
+        v12152MergeDeferredBootstrap(result.data || {});
+      })
+      .catch(function (error) { console.warn('Carga complementar pós-login adiada.', error); });
+  }, 2500, 8);
+}
+
+function v12LoadCommunicationBootstrap() {
+  if (!SGO_V10.sessionValidated) return Promise.resolve(null);
+  return v12ServerCall('loadCommunicationBootstrapServer', v12SessionPayload({}), { timeoutMs: 15000 })
+    .then(function (result) {
+      if (v12HandleSessionInvalid(result)) return null;
+      if (!result || !result.success) throw new Error(result && result.message || 'Falha ao carregar conversas.');
+      var data = result.data || {};
+      state.conversations = Array.isArray(data.conversations) ? data.conversations : [];
+      state.conversationReads = Array.isArray(data.conversationReads) ? data.conversationReads : [];
+      state.messages = Array.isArray(data.messages) ? data.messages : [];
+      state.notifications = Array.isArray(data.notifications) ? data.notifications : state.notifications || [];
+      SGO_V10.chatCursor = Number(data.sequence || SGO_V10.chatCursor || 0);
+      v12ConfirmBaselineCollections(['conversations', 'conversationReads', 'messages', 'notifications']);
+      v10PersistLocal(true);
+      v10RenderNotifications();
+      if (currentPage === 'chat') v10RenderChat();
+      return result;
+    })
+    .catch(function (error) {
+      console.warn('Não foi possível carregar o módulo de comunicação.', error);
+      if (currentPage === 'chat') V10_LEGACY.toast('Chat temporariamente indisponível', 'As tarefas continuam disponíveis. Tente abrir o chat novamente em alguns segundos.', 'error');
+      return null;
+    });
+}
+
+function v12PollMessages() {
+  if (!SGO_V10.sessionValidated || SGO_V10.saveInProgress) return Promise.resolve();
+  var cursor = Number(SGO_V10.chatCursor || 0);
+  var pages = 0;
+  function load() {
+    pages += 1;
+    return v12ServerCall('getMessagesSinceServer', v12SessionPayload({ sequence: cursor, limit: 100 }), { timeoutMs: 9000 })
+      .then(function (result) {
+        if (v12HandleSessionInvalid(result)) return;
+        if (!result || !result.success) throw new Error(result && result.message || 'Falha ao consultar mensagens.');
+        var data = result.data || {};
+        v12MergeUniqueRecords('messages', data.messages || []);
+        cursor = Number(data.sequence || cursor);
+        if (data.hasMore && pages < 10) return load();
+        SGO_V10.chatCursor = cursor;
+        v12ConfirmBaselineCollections(['messages']);
+        v10PersistLocal(true);
+        v10RenderNotifications();
+        if (currentPage === 'chat' && (data.messages || []).length) v10RenderChat();
+      });
+  }
+  return load().catch(function () {});
+}
+
+function v12ScheduleChatPolling() {
+  if (SGO_V10.chatTimer) clearTimeout(SGO_V10.chatTimer);
+  if (!SGO_V10.sessionValidated) return;
+  var delay = document.hidden ? 30000 : (currentPage === 'chat' ? 3000 : 7000);
+  SGO_V10.chatTimer = setTimeout(function () {
+    v12PollMessages().finally(v12ScheduleChatPolling);
+  }, delay);
+}
+
+function v12LoadOlderMessages() {
+  var conversationId = SGO_V10.activeConversationId;
+  if (!conversationId) return;
+  var messages = (state.messages || []).filter(function (message) { return message.conversationId === conversationId; });
+  var before = messages.reduce(function (minimum, message) {
+    var sequence = Number(message._messageSequence || Number.MAX_SAFE_INTEGER);
+    return Math.min(minimum, sequence);
+  }, Number.MAX_SAFE_INTEGER);
+  var button = document.getElementById('v10LoadOlderMessages');
+  if (button) button.disabled = true;
+  v12ServerCall('getConversationMessagesServer', v12SessionPayload({ conversationId:conversationId, beforeSequence:before, limit:50 }), { timeoutMs:10000 })
+    .then(function (result) {
+      if (v12HandleSessionInvalid(result)) return;
+      if (!result || !result.success) throw new Error(result && result.message || 'Falha ao carregar mensagens.');
+      v12MergeUniqueRecords('messages', result.data.messages || []);
+      v12ConfirmBaselineCollections(['messages']);
+      var conversation = v12ConversationRecord(conversationId);
+      if (conversation) conversation._hasMoreMessages = Boolean(result.data.hasMore);
+      v10RenderChat();
+    })
+    .catch(function (error) { V10_LEGACY.toast('Não foi possível carregar', error.message || 'Tente novamente.', 'error'); });
+}
+
+function v10ConversationGroups() {
+  var groups = {};
+  (state.conversations || []).forEach(function (conversation) {
+    if (conversation && conversation.active !== false && conversation.id) groups[conversation.id] = [];
+  });
+  (state.messages || []).filter(function (message) { return message && !message.deleted; }).forEach(function (message) {
+    var key = message.conversationId || (message.taskId ? 'task:' + message.taskId : 'direct:' + message.id);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(message);
+  });
+  Object.keys(groups).forEach(function (key) {
+    groups[key].sort(function (a, b) { return new Date(a.createdAt || a._serverUpdatedAt || 0) - new Date(b.createdAt || b._serverUpdatedAt || 0); });
+  });
+  return groups;
+}
+
+function v10ConversationTitle(key, messages) {
+  var conversation = v12ConversationRecord(key);
+  if (conversation && conversation.name) return conversation.name;
+  if (key.indexOf('task:') === 0 || (conversation && conversation.taskId)) {
+    var taskId = conversation && conversation.taskId || key.slice(5);
+    var task = state.tasks.find(function (item) { return item.id === taskId; });
+    return task ? task.code + ' · ' + task.titulo : 'Conversa de tarefa';
+  }
+  if (key.indexOf('area:') === 0 || (conversation && conversation.type === 'area')) return 'Grupo · ' + (conversation && conversation.area || key.slice(5));
+  var user = currentUser();
+  var ids = conversation && Array.isArray(conversation.participantIds) ? conversation.participantIds.filter(function(id){return !user || id!==user.id;}) : [];
+  if (!ids.length) {
+    var people = {};
+    (messages || []).forEach(function (message) {
+      if (message.authorId && (!user || message.authorId !== user.id)) people[message.authorId] = true;
+      (message.recipientIds || []).forEach(function (idValue) { if (!user || idValue !== user.id) people[idValue] = true; });
+    });
+    ids = Object.keys(people);
+  }
+  var names = ids.map(personName).filter(function (name) { return name !== 'Não definido'; });
+  return names.join(', ') || 'Conversa interna';
+}
+
+function v10MarkConversationRead(conversationId) {
+  if (!SGO_V10.sessionValidated || !conversationId) return;
+  var messages = (state.messages || []).filter(function (message) { return message.conversationId === conversationId; });
+  var last = messages[messages.length - 1] || null;
+  var readId = conversationId + ':' + currentUser().id;
+  var read = {
+    id: readId, conversationId:conversationId, userId:currentUser().id,
+    lastReadMessageId:last ? last.id : '', lastReadSequence:last ? Number(last._messageSequence || SGO_V10.chatCursor || 0) : Number(SGO_V10.chatCursor || 0),
+    lastReadAt:new Date().toISOString()
+  };
+  v12MergeUniqueRecords('conversationReads', [read]);
+  v10RenderNotifications();
+  v12ServerCall('markConversationReadServer', v12SessionPayload({ operationId:v10OperationId(), conversationId:conversationId, lastReadMessageId:read.lastReadMessageId, lastReadSequence:read.lastReadSequence }), { timeoutMs:8000 })
+    .then(function(result){
+      if(result&&result.success&&result.data&&result.data.read){
+        v12MergeUniqueRecords('conversationReads',[result.data.read]);
+        v12ConfirmBaselineCollections(['conversationReads']);
+      } else v12HandleSessionInvalid(result);
+    })
+    .catch(function(){});
+}
+
+function v10RenderChat() {
+  var container = document.getElementById('v10ChatContent');
+  if (!container || !currentUser()) return;
+  var groups = v10ConversationGroups();
+  var searchTerm = String(SGO_V10.chatSearchTerm || '').trim().toLocaleLowerCase('pt-BR');
+  var keys = Object.keys(groups).filter(function (key) {
+    var title = v10ConversationTitle(key, groups[key]);
+    return !searchTerm || title.toLocaleLowerCase('pt-BR').indexOf(searchTerm) >= 0 || groups[key].some(function(message){return String(message.texto||'').toLocaleLowerCase('pt-BR').indexOf(searchTerm)>=0;});
+  }).sort(function (a, b) {
+    var convA=v12ConversationRecord(a)||{}, convB=v12ConversationRecord(b)||{};
+    var lastA=groups[a][groups[a].length-1]||{}, lastB=groups[b][groups[b].length-1]||{};
+    return new Date(lastB.createdAt||lastB._serverUpdatedAt||convB.updatedAt||convB.createdAt||0)-new Date(lastA.createdAt||lastA._serverUpdatedAt||convA.updatedAt||convA.createdAt||0);
+  });
+  if (!SGO_V10.activeConversationId || keys.indexOf(SGO_V10.activeConversationId)<0) SGO_V10.activeConversationId=keys[0]||'';
+  var activeMessages=groups[SGO_V10.activeConversationId]||[];
+  var conversation=v12ConversationRecord(SGO_V10.activeConversationId)||{};
+  var conversationList=keys.length?keys.map(function(key){
+    var last=groups[key][groups[key].length-1]||{};
+    var unread=v12ConversationUnreadCount(key,groups[key]);
+    return '<button type="button" class="v10-conversation-item '+(key===SGO_V10.activeConversationId?'active':'')+'" data-v10-conversation="'+escapeHTML(key)+'"><strong>'+escapeHTML(v10ConversationTitle(key,groups[key]))+(unread?'<span class="nav-badge">'+unread+'</span>':'')+'</strong><p>'+escapeHTML(last.texto||'Sem mensagens')+'</p></button>';
+  }).join(''):detailEmpty('Nenhuma conversa iniciada.');
+  var map=v10MapById(activeMessages);
+  var messagesHtml=activeMessages.length?activeMessages.map(function(message){
+    var replied=message.replyToId?map[message.replyToId]:null;
+    var status=message.deliveryStatus==='sending'?' · Enviando…':message.deliveryStatus==='failed'?' · Falha no envio':'';
+    return '<article class="v10-message-card '+(message.authorId===currentUser().id?'mine':'')+' '+(message.deliveryStatus==='failed'?'failed':'')+'">'+(replied?'<div class="v10-reply-quote"><strong>'+escapeHTML(personName(replied.authorId))+'</strong><span>'+escapeHTML(String(replied.texto||'').slice(0,180))+'</span></div>':'')+'<div class="v10-message-head"><strong>'+escapeHTML(personName(message.authorId))+'</strong><span>'+escapeHTML(formatDateTime(message.createdAt||message._serverUpdatedAt))+escapeHTML(status)+'</span></div><p>'+escapeHTML(message.texto||'')+'</p><button class="btn btn-ghost btn-sm v10-reply-button" type="button" data-v10-reply-message="'+escapeHTML(message.id)+'">Responder</button></article>';
+  }).join(''):detailEmpty(SGO_V10.activeConversationId?'Ainda não há mensagens nesta conversa.':'Selecione uma conversa ou inicie uma nova.');
+  var replyMessage=SGO_V10.replyToMessageId?map[SGO_V10.replyToMessageId]:null;
+  var replyPreview=replyMessage?'<div class="v10-reply-preview"><div><strong>Respondendo a '+escapeHTML(personName(replyMessage.authorId))+'</strong><span>'+escapeHTML(String(replyMessage.texto||'').slice(0,180))+'</span></div><button class="btn btn-ghost btn-sm" type="button" id="v10CancelReply">Cancelar</button></div>':'';
+  var olderButton=SGO_V10.activeConversationId && conversation._hasMoreMessages!==false?'<button class="btn btn-outline btn-sm v10-load-older" id="v10LoadOlderMessages" type="button">Carregar mensagens anteriores</button>':'';
+  container.innerHTML='<div class="v10-chat-layout"><div class="card table-card"><div class="toolbar"><div class="field-inline grow"><i data-lucide="search"></i><input class="control with-icon" id="v10ChatSearch" value="'+escapeHTML(SGO_V10.chatSearchTerm||'')+'" placeholder="Pesquisar conversas e mensagens"></div></div><div class="v10-conversation-list">'+conversationList+'</div></div><div class="card v10-chat-panel"><div class="card-title"><h4><i data-lucide="messages-square"></i>'+escapeHTML(SGO_V10.activeConversationId?v10ConversationTitle(SGO_V10.activeConversationId,activeMessages):'Conversa')+'</h4></div><div class="v10-chat-messages" id="v10ChatMessages">'+olderButton+messagesHtml+'</div>'+replyPreview+'<div class="v10-chat-compose"><textarea class="control" id="v10ChatText" maxlength="4000" placeholder="Digite uma mensagem"></textarea><button class="btn btn-primary" id="v10SendChat" type="button" '+(!SGO_V10.activeConversationId?'disabled':'')+'><i data-lucide="send"></i>Enviar</button></div></div></div>';
+  refreshIcons();
+  if(SGO_V10.activeConversationId)v10MarkConversationRead(SGO_V10.activeConversationId);
+  var box=document.getElementById('v10ChatMessages');if(box)box.scrollTop=box.scrollHeight;
+}
+
+function v10OpenNewDirectChat() {
+  var existing=document.getElementById('v10DirectChatModal');if(existing)existing.remove();
+  var modal=document.createElement('div');modal.className='modal-overlay open';modal.id='v10DirectChatModal';
+  var options=state.collaborators.filter(function(person){return person.ativo&&person.id!==currentUser().id;}).map(function(person){return '<option value="'+escapeHTML(person.id)+'">'+escapeHTML(person.nome)+' · '+escapeHTML(person.area||'Sem área')+'</option>';}).join('');
+  modal.innerHTML='<div class="modal modal-sm"><div class="modal-header"><div><h3>Nova conversa</h3><p>Conversa individual, grupo da área ou grupo personalizado.</p></div><button class="modal-close" data-v10-close="v10DirectChatModal"><i data-lucide="x"></i></button></div><div class="modal-body"><div class="form-group"><label for="v10ChatType">Tipo</label><select class="control" id="v10ChatType"><option value="direct">Conversa individual</option><option value="area">Grupo da minha área</option><option value="group">Grupo personalizado</option></select></div><div class="form-group" id="v10GroupNameWrap" style="margin-top:12px;display:none"><label for="v10GroupName">Nome do grupo</label><input class="control" id="v10GroupName" maxlength="80"></div><div class="form-group" id="v10DirectRecipientGroup" style="margin-top:12px"><label for="v10DirectRecipient">Participantes</label><select class="control" id="v10DirectRecipient" multiple size="7">'+options+'</select></div><div class="form-group" style="margin-top:12px"><label for="v10DirectText">Primeira mensagem (opcional)</label><textarea class="control" id="v10DirectText" maxlength="4000"></textarea></div></div><div class="modal-footer"><button class="btn btn-outline" data-v10-close="v10DirectChatModal">Cancelar</button><button class="btn btn-primary" id="v10CreateDirectChat"><i data-lucide="users-round"></i>Criar conversa</button></div></div>';
+  document.body.appendChild(modal);refreshIcons();
+}
+
+function v10CreateDirectChat() {
+  if (!v10CanStartWrite('criar a conversa')) return;
+  var type=document.getElementById('v10ChatType').value;
+  var select=document.getElementById('v10DirectRecipient');
+  var participants=Array.from(select.selectedOptions||[]).map(function(option){return option.value;});
+  if(type==='direct'&&participants.length!==1)return V10_LEGACY.toast('Selecione uma pessoa','A conversa individual deve possuir um destinatário.','error');
+  if(type==='group'&&participants.length<1)return V10_LEGACY.toast('Selecione participantes','Inclua pelo menos uma pessoa no grupo.','error');
+  var name=String(document.getElementById('v10GroupName').value||'').trim();
+  if(type==='group'&&!name)return V10_LEGACY.toast('Nome obrigatório','Informe o nome do grupo.','error');
+  var text=String(document.getElementById('v10DirectText').value||'').trim();
+  var button=document.getElementById('v10CreateDirectChat');button.disabled=true;
+  var operationId=v10OperationId();
+  v12ServerCall('createConversationServer',v12SessionPayload({operationId:operationId,type:type,name:name,participantIds:participants,area:currentUser().area||''}),{timeoutMs:12000})
+    .then(function(result){
+      if(v12HandleSessionInvalid(result))return;
+      if(!result||!result.success)throw new Error(result&&result.message||'Não foi possível criar a conversa.');
+      v12MergeUniqueRecords('conversations',[result.data.conversation]);
+      v12ConfirmBaselineCollections(['conversations']);
+      SGO_V10.activeConversationId=result.data.conversation.id;
+      var modal=document.getElementById('v10DirectChatModal');if(modal)modal.remove();
+      v10RenderChat();
+      if(text){var field=document.getElementById('v10ChatText');if(field)field.value=text;v10SendActiveChatMessage();}
+      else V10_LEGACY.toast('Conversa criada','O grupo está pronto para receber mensagens.','success');
+    })
+    .catch(function(error){button.disabled=false;V10_LEGACY.toast('Falha ao criar conversa',error.message||'Tente novamente.','error');});
+}
+
+function v10SendActiveChatMessage() {
+  if (!v10CanStartWrite('enviar a mensagem')) return;
+  var field=document.getElementById('v10ChatText');
+  var text=field?field.value.trim():'';
+  var conversationId=SGO_V10.activeConversationId;
+  if(!text||!conversationId)return;
+  var operationId=v10OperationId();
+  var messageId='message_'+operationId;
+  var optimistic={id:messageId,conversationId:conversationId,authorId:currentUser().id,recipientIds:[],texto:text,createdAt:new Date().toISOString(),replyToId:SGO_V10.replyToMessageId||'',readBy:[currentUser().id],deleted:false,deliveryStatus:'sending',_recordVersion:0};
+  v12MergeUniqueRecords('messages',[optimistic]);
+  SGO_V10.replyToMessageId='';
+  field.value='';
+  v10RenderChat();
+  v12ServerCall('sendMessageServer',v12SessionPayload({operationId:operationId,messageId:messageId,conversationId:conversationId,text:text,replyToId:optimistic.replyToId}),{timeoutMs:10000})
+    .then(function(result){
+      if(v12HandleSessionInvalid(result))return;
+      if(!result||!result.success)throw new Error(result&&result.message||'Mensagem não confirmada.');
+      v12MergeUniqueRecords('messages',[result.data.message]);
+      if(result.data.conversation)v12MergeUniqueRecords('conversations',[result.data.conversation]);
+      v12ConfirmBaselineCollections(['messages', 'conversations']);
+      v10PersistLocal(true);v10RenderChat();v10RenderNotifications();
+    })
+    .catch(function(error){optimistic.deliveryStatus='failed';v12MergeUniqueRecords('messages',[optimistic]);v10RenderChat();V10_LEGACY.toast('Falha ao enviar',error.message||'A mensagem foi preservada na tela.','error');});
+}
+
+function v10RenderErrors() {
+  var container = document.getElementById('v10ErrorsContent');
+  if (!container) return;
+  var allowed = currentUser() && ['admin', 'diretoria', 'auditoria'].indexOf(currentUser().perfil) >= 0;
+  if (!allowed) {
+    container.innerHTML = detailEmpty('Seu perfil não possui acesso à central de erros.');
+    return;
+  }
+  var errors = (state.errors || []).slice().sort(function (a, b) { return new Date(b.occurredAt || b._serverUpdatedAt) - new Date(a.occurredAt || a._serverUpdatedAt); });
+  var recent = errors.filter(function (item) { return Date.now() - new Date(item.occurredAt || item._serverUpdatedAt).getTime() <= 86400000; }).length;
+  var open = errors.filter(function (item) { return !item.analysisStatus || item.analysisStatus === 'Novo' || item.analysisStatus === 'Em análise'; }).length;
+  var rows = errors.length ? errors.slice(0, 250).map(function (item) {
+    return '<tr><td class="mono">' + escapeHTML(String(item.id || '').slice(0, 10)) + '</td><td>' + escapeHTML(formatDateTime(item.occurredAt || item._serverUpdatedAt)) + '</td><td>' + escapeHTML(personName(item.userId)) + '</td><td>' + escapeHTML(item.module || '—') + '</td><td><div class="cell-title"><strong>' + escapeHTML(item.message || 'Erro sem descrição') + '</strong><span>' + escapeHTML(item.errorCode || '') + '</span></div></td><td><span class="badge ' + (item.analysisStatus === 'Resolvido' ? 'badge-green' : 'badge-orange') + '">' + escapeHTML(item.analysisStatus || 'Novo') + '</span></td></tr>';
+  }).join('') : '<tr><td colspan="6">' + detailEmpty('Nenhum erro registrado.') + '</td></tr>';
+  container.innerHTML = '<div class="kpi-grid"><article class="kpi-card"><div class="kpi-label">Erros registrados</div><div class="kpi-value">' + errors.length + '</div><div class="kpi-sub">Histórico disponível</div></article><article class="kpi-card peach"><div class="kpi-label">Em análise</div><div class="kpi-value">' + open + '</div><div class="kpi-sub">Pendentes de tratamento</div></article><article class="kpi-card pink"><div class="kpi-label">Últimas 24 horas</div><div class="kpi-value">' + recent + '</div><div class="kpi-sub">Falhas recentes</div></article><article class="kpi-card green"><div class="kpi-label">Versão da base</div><div class="kpi-value">' + Number(SGO_V10.databaseVersion || 0) + '</div><div class="kpi-sub">Controle concorrente ativo</div></article></div><div class="card table-card v10-error-table"><div class="table-wrap"><table><thead><tr><th>ID</th><th>Data</th><th>Usuário</th><th>Módulo</th><th>Mensagem</th><th>Situação</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+function v10ReportProblem(userMessage, sourceError) {
+  if (!runningInGoogleAppsScript()) {
+    V10_LEGACY.toast('Relatório local', 'A versão de demonstração não está conectada ao servidor.', 'info');
+    return;
+  }
+  var report = {
+    userId: currentUser() ? currentUser().id : '',
+    occurredAt: new Date().toISOString(),
+    operation: SGO_V10.operationContext ? SGO_V10.operationContext.module : 'manual-report',
+    page: currentPage,
+    module: sourceError ? 'client-runtime' : 'user-report',
+    message: sourceError && sourceError.message || userMessage || 'Problema informado pelo usuário.',
+    errorCode: sourceError ? 'CLIENT_RUNTIME_ERROR' : 'USER_REPORT',
+    details: sourceError && sourceError.stack || '',
+    syncStatus: SGO_V10.status,
+    appVersion: String(typeof SGO_BUILD_VERSION !== 'undefined' ? SGO_BUILD_VERSION : APP_VERSION),
+    databaseVersion: Number(SGO_V10.databaseVersion || 0),
+    browser: navigator.userAgent,
+    device: [navigator.platform || '', window.innerWidth + 'x' + window.innerHeight].join(' · '),
+    attempts: 1,
+    userMessage: userMessage || '',
+    recentActions: SGO_V10.recentActions.slice(-10)
+  };
+  google.script.run
+    .withSuccessHandler(function (result) {
+      if (result && result.success) V10_LEGACY.toast('Problema registrado', 'O relatório técnico foi enviado ao administrador.', 'success');
+      else V10_LEGACY.toast('Falha ao enviar relatório', result && result.message || 'Tente novamente.', 'error');
+    })
+    .withFailureHandler(function (error) {
+      V10_LEGACY.toast('Falha ao enviar relatório', error && error.message || 'Tente novamente.', 'error');
+    })
+    .reportClientErrorServer(report);
+}
+
+function v10RenderPresence() {
+  var adminPage = document.getElementById('page-administracao');
+  if (!adminPage || !currentUser() || currentUser().perfil !== 'admin') return;
+  var target = document.getElementById('v10PresenceCard');
+  if (!target) {
+    target = document.createElement('div');
+    target.id = 'v10PresenceCard';
+    target.className = 'card';
+    var grid = adminPage.querySelector('.grid-2') || adminPage;
+    grid.appendChild(target);
+  }
+  var rows = (SGO_V10.presence || []).map(function (presence) {
+    var healthy = presence.syncStatus === 'updated' && Number(presence.databaseVersion || 0) === Number(SGO_V10.databaseVersion || 0);
+    return '<tr><td>' + escapeHTML(personName(presence.userId)) + '</td><td><span class="badge ' + (presence.online ? 'badge-green' : 'badge-gray') + '">' + (presence.online ? 'Online' : 'Offline') + '</span></td><td>' + escapeHTML(presence.page || '—') + '</td><td><span class="badge ' + (healthy ? 'badge-green' : (presence.online ? 'badge-orange' : 'badge-gray')) + '">' + escapeHTML(presence.syncStatus || '—') + '</span></td><td class="mono">' + escapeHTML(String(presence.databaseVersion || '—')) + '</td><td>' + escapeHTML(presence.lastSeenAt ? formatDateTime(presence.lastSeenAt) : '—') + '</td></tr>';
+  }).join('');
+  var diff = v10BuildDiff();
+  var pendingLocal = diff.changes.length + Object.keys(diff.systemPatch).length;
+  var recentTasks = (state.tasks || []).filter(function (task) { return Date.now() - new Date(task.criadoEm || task._serverUpdatedAt || 0).getTime() <= 600000; }).length;
+  var pendingFeedback = (state.feedbacks || []).filter(function (item) { return ['Aguardando resposta', 'Correção solicitada'].indexOf(item.status) >= 0; }).length;
+  var unreadMessages = (state.messages || []).filter(function (message) { return (message.recipientIds || []).indexOf(currentUser().id) >= 0 && (message.readBy || []).indexOf(currentUser().id) < 0; }).length;
+  var unhealthySessions = (SGO_V10.presence || []).filter(function (presence) { return presence.online && (presence.syncStatus !== 'updated' || Number(presence.databaseVersion || 0) !== Number(SGO_V10.databaseVersion || 0)); }).length;
+  target.innerHTML = '<div class="card-title"><h4><i data-lucide="radio-tower"></i>Presença e sincronização</h4><button class="btn btn-ghost btn-sm" id="v10RefreshPresence">Atualizar</button></div><div class="v10-admin-summary"><span><strong>' + recentTasks + '</strong> tarefas nos últimos 10 min</span><span><strong>' + pendingFeedback + '</strong> feedbacks pendentes</span><span><strong>' + unreadMessages + '</strong> mensagens não lidas</span><span><strong>' + unhealthySessions + '</strong> sessões desatualizadas</span><span><strong>' + pendingLocal + '</strong> alterações locais</span></div><div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Situação</th><th>Tela</th><th>Sincronização</th><th>Base</th><th>Última atividade</th></tr></thead><tbody>' + (rows || '<tr><td colspan="6">Nenhuma presença disponível.</td></tr>') + '</tbody></table></div>';
+  refreshIcons();
+}
+
+function v10LoadPresence() {
+  if (!runningInGoogleAppsScript() || !currentUser() || currentUser().perfil !== 'admin') return;
+  google.script.run.withSuccessHandler(function (result) {
+    if (result && result.success) {
+      SGO_V10.presence = result.data.presence || [];
+      v10RenderPresence();
+    }
+  }).withFailureHandler(function () {}).getPresenceServer();
+}
+
+function v10BindEvents() {
+  var syncButton = document.getElementById('v10SyncNow');
+  if (syncButton) syncButton.addEventListener('click', function () { v10SyncNow(Boolean(SGO_V10.dirtyTaskForm)); });
+  var notificationButton = document.getElementById('v10NotificationButton');
+  if (notificationButton) notificationButton.addEventListener('click', function () {
+    var dropdown = document.getElementById('v10NotificationDropdown');
+    dropdown.classList.toggle('hidden');
+    notificationButton.setAttribute('aria-expanded', String(!dropdown.classList.contains('hidden')));
+  });
+  var markAll = document.getElementById('v10MarkAllRead');
+  if (markAll) markAll.addEventListener('click', v10MarkAllNotificationsRead);
+  var newChat = document.getElementById('v10NewDirectChat');
+  if (newChat) newChat.addEventListener('click', v10OpenNewDirectChat);
+  var refreshErrors = document.getElementById('v10RefreshErrors');
+  if (refreshErrors) refreshErrors.addEventListener('click', function () { v10SyncNow(false); });
+  ['v10OpenProblem', 'v10FloatingProblem'].forEach(function (idValue) {
+    var button = document.getElementById(idValue);
+    if (button) button.addEventListener('click', function () { document.getElementById('v10ProblemModal').classList.add('open'); });
+  });
+  var sendProblem = document.getElementById('v10SendProblem');
+  if (sendProblem) sendProblem.addEventListener('click', function () {
+    var message = document.getElementById('v10ProblemMessage').value.trim();
+    if (!message) return;
+    v10ReportProblem(message, null);
+    document.getElementById('v10ProblemModal').classList.remove('open');
+    document.getElementById('v10ProblemMessage').value = '';
+  });
+
+  document.addEventListener('input', function (event) {
+    if (event.target.id === 'v10ChatSearch') {
+      SGO_V10.chatSearchTerm = event.target.value;
+      var position = event.target.selectionStart;
+      v10RenderChat();
+      var newField = document.getElementById('v10ChatSearch');
+      if (newField) { newField.focus(); try { newField.setSelectionRange(position, position); } catch (ignored) {} }
+      return;
+    }
+    if (event.target.closest('#taskForm')) {
+      SGO_V10.dirtyTaskForm = true;
+      v10CaptureTaskDraft();
+      var note = document.getElementById('v10DirtyNote');
+      if (note) note.classList.add('visible');
+    }
+  });
+
+  document.addEventListener('click', function (event) {
+    var close = event.target.closest('[data-v10-close]');
+    if (close) {
+      var modal = document.getElementById(close.dataset.v10Close);
+      if (modal) modal.classList.remove('open');
+      return;
+    }
+    var notification = event.target.closest('[data-v10-notification]');
+    if (notification) return v10MarkNotificationRead(notification.dataset.v10Notification);
+    var conversation = event.target.closest('[data-v10-conversation]');
+    if (conversation) {
+      SGO_V10.activeConversationId = conversation.dataset.v10Conversation;
+      SGO_V10.replyToMessageId = '';
+      SGO_V10.chatMessageLimit = 100;
+      v10RenderChat();
+      v10MarkConversationRead(SGO_V10.activeConversationId);
+      return;
+    }
+    var readFeedback = event.target.closest('[data-v10-feedback-read]');
+    if (readFeedback) return v10UpdateFeedback(readFeedback.dataset.v10FeedbackRead, { read: true, readAt: new Date().toISOString(), status: 'Novo feedback' });
+    var replyMessage = event.target.closest('[data-v10-reply-message]');
+    if (replyMessage) { SGO_V10.replyToMessageId = replyMessage.dataset.v10ReplyMessage; v10RenderChat(); return; }
+    if (event.target.closest('#v10CancelReply')) { SGO_V10.replyToMessageId = ''; v10RenderChat(); return; }
+    if (event.target.closest('#v10LoadOlderMessages')) { SGO_V10.chatMessageLimit = Number(SGO_V10.chatMessageLimit || 100) + 100; v10RenderChat(); return; }
+    if (event.target.closest('#v10AddFeedback')) return v10AddFeedback();
+    if (event.target.closest('#v10SendTaskMessage')) return v10SendTaskMessage();
+    if (event.target.closest('#v10SendChat')) return v10SendActiveChatMessage();
+    if (event.target.closest('#v10CreateDirectChat')) return v10CreateDirectChat();
+    if (event.target.closest('#v10CopyDraft')) return v10CopyDraftText();
+    if (event.target.closest('#v10ConflictSync')) return v10SyncNow(true);
+    if (event.target.closest('#v10RefreshPresence')) return v10LoadPresence();
+  });
+
+  document.addEventListener('change', function (event) {
+    if (event.target.id === 'v10ChatType') {
+      var group = document.getElementById('v10DirectRecipientGroup');
+      if (group) group.classList.toggle('hidden', event.target.value === 'area');
+      return;
+    }
+    if (event.target.matches('[data-v10-feedback-status]')) {
+      var patch = { status: event.target.value };
+      if (event.target.value === 'Feedback encerrado' || event.target.value === 'Correção realizada') patch.read = true;
+      v10UpdateFeedback(event.target.dataset.v10FeedbackStatus, patch);
+    }
+  });
+
+  window.addEventListener('beforeunload', function (event) {
+    if (SGO_V10.dirtyTaskForm || SGO_V10.saveInProgress) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  });
+  window.addEventListener('online', function () { v10SyncNow(false); });
+  window.addEventListener('offline', function () { v10SetStatus('offline', 'A conexão com a internet foi interrompida.'); });
+  window.addEventListener('error', function (event) {
+    v10ReportProblem('', event.error || new Error(event.message || 'Erro de execução no navegador.'));
+  });
+  window.addEventListener('unhandledrejection', function (event) {
+    var reason = event.reason instanceof Error ? event.reason : new Error(String(event.reason || 'Promessa rejeitada.'));
+    v10ReportProblem('', reason);
+  });
+}
+
+var V10_LEGACY = {
+  saveState: saveState,
+  toast: toast,
+  closeModal: closeModal,
+  openTaskModal: openTaskModal,
+  saveTaskFromForm: saveTaskFromForm,
+  startTimedTask: startTimedTask,
+  saveTimerWait: saveTimerWait,
+  saveCollaboratorFromForm: saveCollaboratorFromForm,
+  saveProcessFromForm: saveProcessFromForm,
+  saveAuditFromForm: saveAuditFromForm,
+  pauseTimedTask: pauseTimedTask,
+  resumeTimedTask: resumeTimedTask,
+  completeTimedTask: completeTimedTask,
+  addChecklistItem: addChecklistItem,
+  toggleChecklistItem: toggleChecklistItem,
+  deleteChecklistItem: deleteChecklistItem,
+  addTaskComment: addTaskComment,
+  addTaskLink: addTaskLink,
+  deleteTaskLink: deleteTaskLink,
+  deleteTask: deleteTask,
+  toggleCollaborator: toggleCollaborator,
+  approveTask: approveTask,
+  moveTask: moveTask,
+  generateRecurringTasks: generateRecurringTasks,
+  addCompany: addCompany,
+  removeCompany: removeCompany,
+  renderTaskDetails: renderTaskDetails,
+  renderPage: renderPage,
+  renderBadges: renderBadges,
+  renderAdministration: renderAdministration,
+  canAccessPage: canAccessPage,
+  filteredTaskList: filteredTaskList
+};
+
+saveState = function (options) {
+  var diffBefore = v10BuildDiff();
+  if (!SGO_V10.operationContext && (diffBefore.changes.length || Object.keys(diffBefore.systemPatch).length)) {
+    var moduleName = diffBefore.changes[0] ? diffBefore.changes[0].collection : 'system';
+    var hint = SGO_V10.nextOperationHint || {};
+    v10BeginOperation({
+      module: hint.module || moduleName,
+      modalId: hint.modalId || '',
+      successTitle: hint.successTitle || 'Alteração salva',
+      successMessage: hint.successMessage || 'A gravação foi confirmada pelo servidor.',
+      taskId: hint.taskId || ''
+    });
+  }
+  SGO_V10.nextOperationHint = null;
+  return v10SaveState(options);
+};
+
+toast = function (title, message, type) {
+  type = type || 'success';
+  if (SGO_V10.operationContext && SGO_V10.operationContext.failed && type !== 'error') {
+    SGO_V10.operationContext = null;
+    SGO_V10.queuedToast = null;
+    return;
+  }
+  if ((SGO_V10.operationContext && SGO_V10.operationContext.pending) && type !== 'error') {
+    SGO_V10.queuedToast = { title: title, message: message, type: type };
+    return;
+  }
+  return V10_LEGACY.toast(title, message, type);
+};
+
+closeModal = function (modalId) {
+  if (!SGO_V10.allowModalClose && SGO_V10.operationContext && (SGO_V10.operationContext.pending || SGO_V10.operationContext.failed) && SGO_V10.operationContext.modalId === modalId) return;
+  if (!SGO_V10.allowModalClose && modalId === 'taskModal' && SGO_V10.dirtyTaskForm) {
+    if (!window.confirm('Existem alterações não salvas. Deseja fechar e manter o rascunho para recuperação?')) return;
+  }
+  return V10_LEGACY.closeModal(modalId);
+};
+
+openTaskModal = function (taskId) {
+  V10_LEGACY.openTaskModal(taskId);
+  var task = taskId ? state.tasks.find(function (item) { return item.id === taskId; }) : null;
+  var form = document.getElementById('taskForm');
+  if (form) {
+    form.dataset.openedRecordVersion = String(task && task._recordVersion || 0);
+    form.dataset.openedDatabaseVersion = String(SGO_V10.databaseVersion || 0);
+    form.dataset.openedAt = new Date().toISOString();
+  }
+  v10ClearTaskDraft();
+  v10SetTaskSaveLocked(SGO_V10.status !== 'updated');
+};
+
+saveTaskFromForm = function (event) {
+  event.preventDefault();
+  if (SGO_V10.preflightInProgress || SGO_V10.saveInProgress) return;
+  var form = document.getElementById('taskForm');
+  var taskId = document.getElementById('taskId').value;
+  var existing = taskId ? state.tasks.find(function (task) { return task.id === taskId; }) : null;
+  if (existing && !can('editTask', { task: existing })) return;
+  if (!validateTask(existing)) return;
+  var draft = v10CaptureTaskDraft();
+  if (!runningInGoogleAppsScript() || !SGO_V10.remoteReady) {
+    v10SetStatus('offline', 'Não foi possível confirmar a versão atual do servidor.');
+    V10_LEGACY.toast('Gravação bloqueada', 'O SGO precisa estar conectado e atualizado para salvar a tarefa.', 'error');
+    return;
+  }
+  SGO_V10.preflightInProgress = true;
+  v10SetStatus('checking', 'Conferindo a versão da base e da tarefa');
+  v10SetTaskSaveLocked(true);
+  google.script.run
+    .withSuccessHandler(function (result) {
+      SGO_V10.preflightInProgress = false;
+      if (!result || !result.success || !result.confirmed) {
+        v10SetTaskSaveLocked(false);
+        v10ShowTaskConflict(result || { message: 'Não foi possível confirmar a versão atual.' });
+        return;
+      }
+      SGO_V10.databaseVersion = Number(result.databaseVersion || SGO_V10.databaseVersion || 0);
+      v10BeginOperation({
+        module: 'tasks', modalId: 'taskModal', draft: draft, taskId: taskId,
+        successTitle: existing ? 'Tarefa atualizada' : 'Tarefa criada',
+        successMessage: 'A tarefa foi validada e salva no servidor.'
+      });
+      V10_LEGACY.saveTaskFromForm({ preventDefault: function () {} });
+    })
+    .withFailureHandler(function (error) {
+      SGO_V10.preflightInProgress = false;
+      v10SetTaskSaveLocked(false);
+      v10SetStatus(navigator.onLine ? 'error' : 'offline', error && error.message || 'Falha ao consultar o servidor.');
+      V10_LEGACY.toast('Gravação bloqueada', 'O servidor não confirmou que o SGO está atualizado.', 'error');
+    })
+    .preflightWriteServer({
+      databaseVersion: Number(SGO_V10.databaseVersion || 0),
+      taskId: taskId,
+      taskVersion: Number(form && form.dataset.openedRecordVersion || existing && existing._recordVersion || 0),
+      userId: currentUser() ? currentUser().id : '',
+      openedAt: form && form.dataset.openedAt || ''
+    });
+};
+
+function v10RunWithHint(hint, callback) {
+  SGO_V10.nextOperationHint = hint || null;
+  try {
+    return callback();
+  } finally {
+    if (!SGO_V10.operationContext) SGO_V10.nextOperationHint = null;
+  }
+}
+
+function v10GuardedLegacy(actionLabel, hint, legacyFunction, args) {
+  if (!v10CanStartWrite(actionLabel)) return;
+  return v10RunWithHint(hint, function () { return legacyFunction.apply(window, args || []); });
+}
+
+pauseTimedTask = function (taskId) { return v10GuardedLegacy('pausar o cronômetro', { module: 'tasks', taskId: taskId, successTitle: 'Cronômetro pausado', successMessage: 'O tempo foi confirmado pelo servidor.' }, V10_LEGACY.pauseTimedTask, [taskId]); };
+resumeTimedTask = function (taskId) { return v10GuardedLegacy('retomar o cronômetro', { module: 'tasks', taskId: taskId, successTitle: 'Tarefa retomada', successMessage: 'O cronômetro foi retomado no servidor.' }, V10_LEGACY.resumeTimedTask, [taskId]); };
+completeTimedTask = function (taskId) { return v10GuardedLegacy('concluir a tarefa', { module: 'tasks', taskId: taskId, successTitle: 'Tarefa concluída', successMessage: 'A conclusão foi confirmada pelo servidor.' }, V10_LEGACY.completeTimedTask, [taskId]); };
+addChecklistItem = function () { return v10GuardedLegacy('adicionar o item', { module: 'tasks', successTitle: 'Checklist atualizado', successMessage: 'O item foi confirmado pelo servidor.' }, V10_LEGACY.addChecklistItem, []); };
+toggleChecklistItem = function (taskId, itemId, checked) { return v10GuardedLegacy('atualizar o checklist', { module: 'tasks', taskId: taskId, successTitle: 'Checklist atualizado', successMessage: 'A etapa foi confirmada pelo servidor.' }, V10_LEGACY.toggleChecklistItem, [taskId, itemId, checked]); };
+deleteChecklistItem = function (taskId, itemId) { return v10GuardedLegacy('remover o item', { module: 'tasks', taskId: taskId, successTitle: 'Checklist atualizado', successMessage: 'A remoção foi confirmada pelo servidor.' }, V10_LEGACY.deleteChecklistItem, [taskId, itemId]); };
+addTaskComment = function () { return v10GuardedLegacy('adicionar o comentário', { module: 'tasks', successTitle: 'Comentário registrado', successMessage: 'O comentário foi confirmado pelo servidor.' }, V10_LEGACY.addTaskComment, []); };
+addTaskLink = function () { return v10GuardedLegacy('adicionar a evidência', { module: 'tasks', successTitle: 'Evidência registrada', successMessage: 'O link foi confirmado pelo servidor.' }, V10_LEGACY.addTaskLink, []); };
+deleteTaskLink = function (taskId, linkId) { return v10GuardedLegacy('remover a evidência', { module: 'tasks', taskId: taskId, successTitle: 'Evidência removida', successMessage: 'A remoção foi confirmada pelo servidor.' }, V10_LEGACY.deleteTaskLink, [taskId, linkId]); };
+deleteTask = function (taskId) { return v10GuardedLegacy('excluir a tarefa', { module: 'tasks', taskId: taskId, successTitle: 'Tarefa excluída', successMessage: 'A exclusão lógica foi confirmada pelo servidor.' }, V10_LEGACY.deleteTask, [taskId]); };
+toggleCollaborator = function (personId) { return v10GuardedLegacy('alterar o colaborador', { module: 'collaborators', successTitle: 'Colaborador atualizado', successMessage: 'A situação foi confirmada pelo servidor.' }, V10_LEGACY.toggleCollaborator, [personId]); };
+approveTask = function (taskId, approved) { return v10GuardedLegacy('registrar a aprovação', { module: 'tasks', taskId: taskId, successTitle: approved ? 'Tarefa aprovada' : 'Tarefa devolvida', successMessage: 'A decisão foi confirmada pelo servidor.' }, V10_LEGACY.approveTask, [taskId, approved]); };
+moveTask = function (taskId, status) { return v10GuardedLegacy('alterar o status', { module: 'tasks', taskId: taskId, successTitle: 'Status atualizado', successMessage: 'O novo status foi confirmado pelo servidor.' }, V10_LEGACY.moveTask, [taskId, status]); };
+generateRecurringTasks = function () { return v10GuardedLegacy('gerar as rotinas', { module: 'tasks', successTitle: 'Rotinas processadas', successMessage: 'As rotinas foram confirmadas pelo servidor.' }, V10_LEGACY.generateRecurringTasks, []); };
+addCompany = function () { return v10GuardedLegacy('adicionar a empresa', { module: 'system', successTitle: 'Empresa adicionada', successMessage: 'A configuração foi confirmada pelo servidor.' }, V10_LEGACY.addCompany, []); };
+removeCompany = function (company) { return v10GuardedLegacy('remover a empresa', { module: 'system', successTitle: 'Empresa removida', successMessage: 'A configuração foi confirmada pelo servidor.' }, V10_LEGACY.removeCompany, [company]); };
+
+startTimedTask = function (event) {
+  if (!v10CanStartWrite('iniciar a tarefa')) return;
+  return v10RunWithHint({ module: 'tasks', modalId: 'timedTaskModal', successTitle: 'Tarefa iniciada', successMessage: 'A tarefa e o cronômetro foram confirmados pelo servidor.' }, function () {
+    return V10_LEGACY.startTimedTask(event);
+  });
+};
+
+saveTimerWait = function (event) {
+  if (!v10CanStartWrite('alterar o cronômetro')) return;
+  return v10RunWithHint({ module: 'tasks', modalId: 'timerWaitModal', successTitle: 'Espera registrada', successMessage: 'O novo estado do cronômetro foi confirmado pelo servidor.' }, function () {
+    return V10_LEGACY.saveTimerWait(event);
+  });
+};
+
+saveCollaboratorFromForm = function (event) {
+  if (!v10CanStartWrite('salvar o colaborador')) return;
+  return v10RunWithHint({ module: 'collaborators', modalId: 'collaboratorModal', successTitle: 'Colaborador salvo', successMessage: 'O cadastro foi confirmado pelo servidor.' }, function () {
+    return V10_LEGACY.saveCollaboratorFromForm(event);
+  });
+};
+
+saveProcessFromForm = function (event) {
+  if (!v10CanStartWrite('salvar o processo')) return;
+  return v10RunWithHint({ module: 'processes', modalId: 'processModal', successTitle: 'Processo salvo', successMessage: 'O processo foi confirmado pelo servidor.' }, function () {
+    return V10_LEGACY.saveProcessFromForm(event);
+  });
+};
+
+saveAuditFromForm = function (event) {
+  if (!v10CanStartWrite('salvar a auditoria')) return;
+  return v10RunWithHint({ module: 'audits', modalId: 'auditModal', successTitle: 'Auditoria registrada', successMessage: 'A auditoria foi confirmada pelo servidor.' }, function () {
+    return V10_LEGACY.saveAuditFromForm(event);
+  });
+};
+
+renderTaskDetails = function (taskId) {
+  V10_LEGACY.renderTaskDetails(taskId);
+  v10RenderTaskExtensions(taskId);
+};
+
+renderPage = function (page) {
+  V10_LEGACY.renderPage(page);
+  v10RenderNotifications();
+  if (currentPage === 'chat') v10RenderChat();
+  if (currentPage === 'erros') v10RenderErrors();
+  if (currentPage === 'administracao') v10RenderPresence();
+};
+
+renderBadges = function () {
+  V10_LEGACY.renderBadges();
+  v10RenderNotifications();
+  var badge = document.getElementById('badgeErrors');
+  if (badge) {
+    var count = (state.errors || []).filter(function (item) { return !item.analysisStatus || item.analysisStatus === 'Novo' || item.analysisStatus === 'Em análise'; }).length;
+    badge.textContent = String(count);
+  }
+};
+
+renderAdministration = function () {
+  V10_LEGACY.renderAdministration();
+  v10RenderPresence();
+  if (!SGO_V10.presence.length) v10LoadPresence();
+};
+
+canAccessPage = function (page) {
+  if (page === 'chat') return Boolean(currentUser());
+  if (page === 'erros') return Boolean(currentUser() && ['admin', 'diretoria', 'auditoria'].indexOf(currentUser().perfil) >= 0);
+  return V10_LEGACY.canAccessPage(page);
+};
+
+filteredTaskList = function () {
+  var tasks = V10_LEGACY.filteredTaskList();
+  var filter = document.getElementById('v10FeedbackFilter');
+  if (!filter || !filter.value) return tasks;
+  return tasks.filter(function (task) {
+    var feedbacks = v10FeedbacksForTask(task.id);
+    if (filter.value === 'unread') return feedbacks.some(function (item) { return !item.read; });
+    if (filter.value === 'response') return feedbacks.some(function (item) { return item.status === 'Aguardando resposta'; });
+    if (filter.value === 'correction') return feedbacks.some(function (item) { return item.status === 'Correção solicitada'; });
+    if (filter.value === 'overdue') return feedbacks.some(function (item) { return item.responseDue && new Date(item.responseDue + 'T23:59:59') < new Date() && item.status !== 'Feedback encerrado'; });
+    return true;
+  });
+};
+
+function v10AddFeedbackFilter() {
+  if (document.getElementById('v10FeedbackFilter')) return;
+  var toolbar = document.querySelector('#page-tarefas .toolbar');
+  if (!toolbar) return;
+  var select = document.createElement('select');
+  select.className = 'control';
+  select.id = 'v10FeedbackFilter';
+  select.style.width = 'auto';
+  select.innerHTML = '<option value="">Todos os feedbacks</option><option value="unread">Feedback não lido</option><option value="response">Aguardando resposta</option><option value="correction">Correção solicitada</option><option value="overdue">Retorno vencido</option>';
+  select.addEventListener('change', renderTasks);
+  toolbar.appendChild(select);
+}
+
+initFromGoogleSheets = function () {
+  v10InstallUI();
+  v10AddFeedbackFilter();
+  if (!runningInGoogleAppsScript()) {
+    v10EnsureCollections(state);
+    SGO_V10.databaseVersion = Number(state._databaseVersion || 0);
+    SGO_V10.lastSyncedState = v10Clone(state);
+    SGO_V10.remoteReady = false;
+    window.__sgoRemoteReady = false;
+    SGO_V10.bootstrapping = true;
+    init();
+    SGO_V10.bootstrapping = false;
+    v10BindEvents();
+    v10SetStatus('local', 'Modo de demonstração local');
+    return;
+  }
+  v10SetStatus('checking', 'Carregando a base compartilhada');
+  google.script.run
+    .withSuccessHandler(function (result) {
+      if (!result || !result.success || !result.confirmed || !result.data || !result.data.state) {
+        SGO_V10.remoteReady = false;
+        window.__sgoRemoteReady = false;
+        startupNotice = { title: 'Base compartilhada indisponível', message: result && result.message || 'A versão do servidor não pôde ser confirmada.', type: 'error' };
+      } else {
+        state = normalizeState(result.data.state);
+        v10EnsureCollections(state);
+        SGO_V10.databaseVersion = Number(result.databaseVersion || state._databaseVersion || 0);
+        state._databaseVersion = SGO_V10.databaseVersion;
+        SGO_V10.lastSyncedState = v10Clone(state);
+        SGO_V10.lastSyncAt = result.serverTimestamp || new Date().toISOString();
+        SGO_V10.remoteReady = true;
+        window.__sgoRemoteReady = true;
+        v10PersistLocal(true);
+        startupNotice = { title: 'SGO v12 conectado', message: 'Sessão segura, versionamento e sincronização automática estão ativos.', type: 'success' };
+      }
+      SGO_V10.bootstrapping = true;
+      init();
+      SGO_V10.bootstrapping = false;
+      v10BindEvents();
+      v10StartBackgroundServices();
+      v10SetStatus(SGO_V10.remoteReady ? 'updated' : 'error', SGO_V10.remoteReady ? '' : 'Gravações no servidor estão bloqueadas.');
+      v10RenderNotifications();
+    })
+    .withFailureHandler(function (error) {
+      SGO_V10.remoteReady = false;
+      window.__sgoRemoteReady = false;
+      startupNotice = { title: 'Servidor indisponível', message: 'O sistema abriu para consulta, mas as gravações estão bloqueadas.', type: 'error' };
+      SGO_V10.bootstrapping = true;
+      init();
+      SGO_V10.bootstrapping = false;
+      v10BindEvents();
+      v10SetStatus(navigator.onLine ? 'error' : 'offline', error && error.message || 'Falha de conexão.');
+    })
+    .loadV10BootstrapServer();
+};
+
+/* ========================================================================== */
+/* SGO v12 — integração final validada: autenticação, tarefas e comunicação. */
+/* ========================================================================== */
+
+function v12ClearPrivateState() {
+  ['companies','collaborators','tasks','messages','feedbacks','notifications','processes','audits','activity','securityLog','errors','conversations','conversationReads'].forEach(function (collection) {
+    state[collection] = [];
+  });
+  state.settings = {};
+  state.security = Object.assign({}, state.security || {}, { pinHashes: {}, failedAttempts: {} });
+  SGO_V10.lastSyncedState = v10Clone(state);
+  SGO_V10.activeConversationId = '';
+  SGO_V10.chatCursor = 0;
+  storageRemove(STORAGE_KEY);
+}
+
+v12HandleSessionInvalid = function (result) {
+  if (!result || result.errorCode !== 'SESSION_INVALID') return false;
+  v12ClearSessionLocal();
+  v12ClearPrivateState();
+  SGO_V10.remoteReady = true;
+  window.__sgoRemoteReady = true;
+  showLoginScreen(result.message || 'Sua sessão expirou. Entre novamente.');
+  v10SetStatus('checking', 'Aguardando autenticação');
+  try { renderPage('dashboard'); } catch (ignored) {}
+  return true;
+};
+
+readCorporateSession = function () {
+  if (!SGO_V10.sessionValidated || !SGO_V10.sessionToken || !currentUserId) return null;
+  if (SGO_V10.sessionExpiresAt && Date.now() >= Number(SGO_V10.sessionExpiresAt)) return null;
+  var user = personById(currentUserId);
+  if (!user || user.ativo === false) return null;
+  return { userId: currentUserId, expiresAt: SGO_V10.sessionExpiresAt, serverValidated: true };
+};
+
+writeCorporateSession = function () {
+  return readCorporateSession();
+};
+
+touchCorporateSession = function () {
+  if (!SGO_V10.sessionValidated || !SGO_V10.sessionToken) return;
+  lastSessionTouch = Date.now();
+};
+
+authenticateCorporate = function (event) {
+  event.preventDefault();
+  var loginUiStartedAt = Date.now();
+  if (!runningInGoogleAppsScript()) return V10_LEGACY.toast('Acesso local', 'A autenticação corporativa exige o Google Apps Script.', 'error');
+  var emailField = document.getElementById('loginEmail');
+  var pinField = document.getElementById('loginPin');
+  var statusField = document.getElementById('loginStatus');
+  var submit = document.querySelector('#corporateLoginForm button[type="submit"]');
+  var email = String(emailField && emailField.value || '').trim().toLowerCase();
+  var pin = String(pinField && pinField.value || '');
+  if (!email || !pin) {
+    statusField.textContent = 'Informe o e-mail corporativo e o PIN.';
+    return;
+  }
+  if (submit) submit.disabled = true;
+  statusField.textContent = 'Validando acesso no servidor…';
+  var operationId = v10OperationId();
+  v12ServerCall('authenticateSessionServer', { email: email, pin: pin, operationId: operationId }, { timeoutMs: 15000, timeoutMessage: 'A autenticação está demorando mais que o normal.' })
+    .then(function (result) {
+      if (!result || !result.success || !result.confirmed || !result.data || !result.data.sessionToken || !result.data.state) {
+        throw new Error(result && result.message || 'Não foi possível validar o acesso.');
+      }
+      v12SaveSessionLocal(result.data.sessionToken, result.data.expiresAt);
+      currentUserId = String(result.data.user && result.data.user.id || '');
+      storageSet(CURRENT_USER_KEY, currentUserId);
+      v12ApplyState(result.data.state, result.databaseVersion, result.data.changeSequence);
+      SGO_V10.remoteReady = true;
+      window.__sgoRemoteReady = true;
+      hideLoginScreen();
+      renderTopbarUser();
+      applyBranding();
+      applyAccessControl();
+      populateFilterOptions();
+      navigate(canAccessPage(currentPage) ? currentPage : 'dashboard');
+      renderCorporateBanner();
+      renderTimerDock();
+      v12LockIdentitySelector();
+      startCorporateSessionMonitor();
+      v10SetStatus('updated');
+      v10StartBackgroundServices();
+      try {
+        v128DiagEvent('INFO','login','LOGIN_UI_READY',{
+          durationMs:Date.now()-loginUiStartedAt,
+          status:'ready',
+          message:'Tela principal liberada.',
+          context:{server:result.data.loginPerf || {}}
+        });
+      } catch (ignored) {}
+      v12152StartPostLoginLoads({
+        needsCredentialMigration:Boolean(result.data.needsCredentialMigration),
+        pin:pin,
+        loginPerf:result.data.loginPerf || {}
+      });
+      if (pinField) pinField.value = '';
+      pin = '';
+      return null;
+    })
+    .then(function () {
+      statusField.textContent = '';
+      V10_LEGACY.toast('Acesso autorizado', 'Bem-vindo(a), ' + (currentUser() ? currentUser().nome : 'usuário') + '.', 'success');
+    })
+    .catch(function (error) {
+      statusField.textContent = error && error.message || 'Falha ao autenticar.';
+    })
+    .finally(function () { if (submit) submit.disabled = false; });
+};
+
+logoutCorporate = function (reason) {
+  reason = reason || 'Sessão encerrada pelo usuário.';
+  var token = SGO_V10.sessionToken;
+  if (token && runningInGoogleAppsScript()) {
+    v12ServerCall('logoutSessionServer', { sessionToken: token }, { timeoutMs: 5000 }).catch(function () {});
+  }
+  v12ClearSessionLocal();
+  v12ClearPrivateState();
+  if (corporateSessionTimer) clearInterval(corporateSessionTimer);
+  showLoginScreen(reason);
+  v10SetStatus('checking', 'Aguardando autenticação');
+  try { renderTopbarUser(); renderPage('dashboard'); } catch (ignored) {}
+};
+
+lockCorporate = function () {
+  logoutCorporate('Sessão bloqueada. Entre novamente para continuar.');
+};
+
+resetUserPin = function (userId) {
+  if (!currentUser() || currentUser().perfil !== 'admin') return V10_LEGACY.toast('Acesso negado', 'Somente administradores podem redefinir credenciais.', 'error');
+  var person = personById(userId);
+  if (!person) return;
+  if (!window.confirm('Gerar um novo PIN temporário para ' + person.nome + '?')) return;
+  v12ServerCall('resetUserPinServer', v12SessionPayload({ userId: userId }), { timeoutMs: 10000 })
+    .then(function (result) {
+      if (v12HandleSessionInvalid(result)) return;
+      if (!result || !result.success) throw new Error(result && result.message || 'Falha ao redefinir o PIN.');
+      var temporaryPin = String(result.data && result.data.temporaryPin || '');
+      if (temporaryPin) window.alert('Novo PIN temporário de ' + person.nome + ': ' + temporaryPin + '\n\nEnvie este PIN ao colaborador por um canal seguro.');
+      V10_LEGACY.toast('PIN redefinido', 'Um novo PIN temporário foi gerado.', 'success');
+    })
+    .catch(function (error) { V10_LEGACY.toast('Falha ao redefinir PIN', error.message || 'Tente novamente.', 'error'); });
+};
+
+var V12_NOTIFICATION_RENDER_BASE = v10RenderNotifications;
+v10RenderNotifications = function () {
+  V12_NOTIFICATION_RENDER_BASE();
+  var badge = document.getElementById('badgeChat');
+  if (!badge || !currentUser()) return;
+  var groups = v10ConversationGroups();
+  var total = Object.keys(groups).reduce(function (sum, conversationId) {
+    return sum + v12ConversationUnreadCount(conversationId, groups[conversationId]);
+  }, 0);
+  badge.textContent = total > 99 ? '99+' : String(total);
+};
+
+saveState = function (options) {
+  var diffBefore = v10BuildDiff();
+  if (!SGO_V10.operationContext && (diffBefore.changes.length || Object.keys(diffBefore.systemPatch).length)) {
+    var moduleName = diffBefore.changes[0] ? diffBefore.changes[0].collection : 'system';
+    var hint = SGO_V10.nextOperationHint || {};
+    v10BeginOperation({
+      module: hint.module || moduleName,
+      modalId: hint.modalId || '',
+      successTitle: hint.successTitle || 'Alteração salva',
+      successMessage: hint.successMessage || 'A gravação foi confirmada pelo servidor.',
+      taskId: hint.taskId || '',
+      taskAction: hint.taskAction || '',
+      operationId: hint.operationId || ''
+    });
+  }
+  SGO_V10.nextOperationHint = null;
+  return v10SaveState(options);
+};
+
+closeModal = function (modalId) {
+  if (!SGO_V10.allowModalClose && SGO_V10.operationContext && SGO_V10.operationContext.pending && SGO_V10.operationContext.modalId === modalId) {
+    V10_LEGACY.toast('Operação em andamento', 'Aguarde a confirmação ou use o destravamento após o tempo limite.', 'info');
+    return;
+  }
+  if (!SGO_V10.allowModalClose && modalId === 'taskModal' && SGO_V10.dirtyTaskForm) {
+    if (!window.confirm('Existem alterações não salvas. Deseja fechar e manter o rascunho para recuperação?')) return;
+  }
+  return V10_LEGACY.closeModal(modalId);
+};
+
+saveTaskFromForm = function (event) {
+  event.preventDefault();
+  if (SGO_V10.preflightInProgress || SGO_V10.saveInProgress) return;
+  var form = document.getElementById('taskForm');
+  var taskId = document.getElementById('taskId').value;
+  var existing = taskId ? state.tasks.find(function (task) { return task.id === taskId; }) : null;
+  if (existing && !can('editTask', { task: existing })) return;
+  if (!validateTask(existing)) return;
+  if (!v10CanStartWrite(existing ? 'salvar a tarefa' : 'criar a tarefa')) return;
+  var draft = v10CaptureTaskDraft();
+  var operationId = v10OperationId();
+  SGO_V10.preflightInProgress = true;
+  v10SetStatus('checking', 'Conferindo a versão da tarefa');
+  v10SetTaskSaveLocked(true);
+  v12ServerCall('preflightWriteServer', v12SessionPayload({
+    operationId: operationId,
+    taskId: taskId,
+    taskVersion: Number(form && form.dataset.openedRecordVersion || existing && existing._recordVersion || 0),
+    openedAt: form && form.dataset.openedAt || ''
+  }), { timeoutMs: 8000, timeoutMessage: 'A conferência da tarefa está demorando mais que o normal.' })
+    .then(function (result) {
+      SGO_V10.preflightInProgress = false;
+      if (v12HandleSessionInvalid(result)) return;
+      if (!result || !result.success || !result.confirmed) {
+        v10SetTaskSaveLocked(false);
+        v10ShowTaskConflict(result || { message: 'Não foi possível confirmar a versão atual.' });
+        return;
+      }
+      SGO_V10.databaseVersion = Number(result.databaseVersion || SGO_V10.databaseVersion || 0);
+      v10BeginOperation({
+        module: 'tasks', modalId: 'taskModal', draft: draft, taskId: taskId,
+        taskAction: existing ? 'update' : 'create', operationId: operationId,
+        successTitle: existing ? 'Tarefa atualizada' : 'Tarefa criada',
+        successMessage: 'A tarefa foi validada e salva no servidor.'
+      });
+      V10_LEGACY.saveTaskFromForm({ preventDefault: function () {} });
+    })
+    .catch(function (error) {
+      SGO_V10.preflightInProgress = false;
+      v10SetTaskSaveLocked(false);
+      v10SetStatus(navigator.onLine ? 'error' : 'offline', error && error.message || 'Falha ao consultar o servidor.');
+      V10_LEGACY.toast('Gravação bloqueada', 'O servidor não confirmou a versão da tarefa. O conteúdo foi preservado.', 'error');
+    });
+};
+
+pauseTimedTask = function (taskId) { return v10GuardedLegacy('pausar o cronômetro', { module:'tasks',taskId:taskId,taskAction:'pause',successTitle:'Cronômetro pausado',successMessage:'O tempo foi confirmado pelo servidor.' }, V10_LEGACY.pauseTimedTask, [taskId]); };
+resumeTimedTask = function (taskId) { return v10GuardedLegacy('retomar o cronômetro', { module:'tasks',taskId:taskId,taskAction:'resume',successTitle:'Tarefa retomada',successMessage:'O cronômetro foi retomado no servidor.' }, V10_LEGACY.resumeTimedTask, [taskId]); };
+completeTimedTask = function (taskId) { return v10GuardedLegacy('concluir a tarefa', { module:'tasks',taskId:taskId,taskAction:'complete',successTitle:'Tarefa concluída',successMessage:'A conclusão foi confirmada pelo servidor.' }, V10_LEGACY.completeTimedTask, [taskId]); };
+deleteTask = function (taskId) { return v10GuardedLegacy('excluir a tarefa', { module:'tasks',taskId:taskId,taskAction:'delete',successTitle:'Tarefa excluída',successMessage:'A exclusão lógica foi confirmada pelo servidor.' }, V10_LEGACY.deleteTask, [taskId]); };
+approveTask = function (taskId, approved) { return v10GuardedLegacy('registrar a aprovação', { module:'tasks',taskId:taskId,taskAction:approved?'approve':'reject',successTitle:approved?'Tarefa aprovada':'Tarefa devolvida',successMessage:'A decisão foi confirmada pelo servidor.' }, V10_LEGACY.approveTask, [taskId, approved]); };
+moveTask = function (taskId, status) { return v10GuardedLegacy('alterar o status', { module:'tasks',taskId:taskId,taskAction:status==='Concluída'?'complete':'update',successTitle:'Status atualizado',successMessage:'O novo status foi confirmado pelo servidor.' }, V10_LEGACY.moveTask, [taskId, status]); };
+startTimedTask = function (event) {
+  if (!v10CanStartWrite('iniciar a tarefa')) return;
+  return v10RunWithHint({ module:'tasks',modalId:'timedTaskModal',taskAction:'start',successTitle:'Tarefa iniciada',successMessage:'A tarefa e o cronômetro foram confirmados pelo servidor.' }, function () { return V10_LEGACY.startTimedTask(event); });
+};
+saveTimerWait = function (event) {
+  if (!v10CanStartWrite('alterar o cronômetro')) return;
+  return v10RunWithHint({ module:'tasks',modalId:'timerWaitModal',taskAction:'update',successTitle:'Espera registrada',successMessage:'O novo estado do cronômetro foi confirmado pelo servidor.' }, function () { return V10_LEGACY.saveTimerWait(event); });
+};
+
+v10LoadPresence = function () {
+  if (!runningInGoogleAppsScript() || !SGO_V10.sessionValidated || !currentUser() || currentUser().perfil !== 'admin') return;
+  v12ServerCall('getPresenceServer', v12SessionPayload({}), { timeoutMs: 8000 })
+    .then(function (result) {
+      if (v12HandleSessionInvalid(result)) return;
+      if (result && result.success) { SGO_V10.presence = result.data.presence || []; v10RenderPresence(); }
+    }).catch(function () {});
+};
+
+v10ReportProblem = function (userMessage, sourceError) {
+  if (!runningInGoogleAppsScript()) return;
+  var report = v12SessionPayload({
+    operationId: v10OperationId(),
+    userMessage: String(userMessage || ''),
+    message: String(sourceError && sourceError.message || userMessage || 'Erro informado pelo usuário'),
+    stack: String(sourceError && sourceError.stack || ''),
+    page: currentPage || '',
+    module: currentPage || 'client',
+    userAgent: navigator.userAgent,
+    online: navigator.onLine,
+    databaseVersion: Number(SGO_V10.databaseVersion || 0),
+    syncStatus: SGO_V10.status,
+    recentActions: SGO_V10.recentActions.slice(-10)
+  });
+  v12ServerCall('reportClientErrorServer', report, { timeoutMs: 7000 }).catch(function () {});
+};
+
+v10BindEvents = function () {
+  if (document.body.dataset.v12EventsBound === 'true') return;
+  document.body.dataset.v12EventsBound = 'true';
+  var syncButton = document.getElementById('v10SyncNow');
+  if (syncButton) syncButton.addEventListener('click', function () { v10SyncNow(Boolean(SGO_V10.dirtyTaskForm)); });
+  var notificationButton = document.getElementById('v10NotificationButton');
+  if (notificationButton) notificationButton.addEventListener('click', function () {
+    var dropdown = document.getElementById('v10NotificationDropdown');
+    dropdown.classList.toggle('hidden');
+    notificationButton.setAttribute('aria-expanded', String(!dropdown.classList.contains('hidden')));
+  });
+  var markAll = document.getElementById('v10MarkAllRead');
+  if (markAll) markAll.addEventListener('click', v10MarkAllNotificationsRead);
+  var newChat = document.getElementById('v10NewDirectChat');
+  if (newChat) newChat.addEventListener('click', v10OpenNewDirectChat);
+  ['v10OpenProblem','v10FloatingProblem'].forEach(function (idValue) {
+    var button = document.getElementById(idValue);
+    if (button) button.addEventListener('click', function () { document.getElementById('v10ProblemModal').classList.add('open'); });
+  });
+  var sendProblem = document.getElementById('v10SendProblem');
+  if (sendProblem) sendProblem.addEventListener('click', function () {
+    var message = document.getElementById('v10ProblemMessage').value.trim();
+    if (!message) return;
+    v10ReportProblem(message, null);
+    document.getElementById('v10ProblemModal').classList.remove('open');
+    document.getElementById('v10ProblemMessage').value = '';
+  });
+  document.addEventListener('input', function (event) {
+    if (event.target.id === 'v10ChatSearch') {
+      SGO_V10.chatSearchTerm = event.target.value;
+      var position = event.target.selectionStart;
+      v10RenderChat();
+      var field = document.getElementById('v10ChatSearch');
+      if (field) { field.focus(); try { field.setSelectionRange(position, position); } catch (ignored) {} }
+      return;
+    }
+    if (event.target.closest('#taskForm')) {
+      SGO_V10.dirtyTaskForm = true;
+      v10CaptureTaskDraft();
+      var note = document.getElementById('v10DirtyNote');
+      if (note) note.classList.add('visible');
+    }
+  });
+  document.addEventListener('click', function (event) {
+    var close = event.target.closest('[data-v10-close]');
+    if (close) { var modal = document.getElementById(close.dataset.v10Close); if (modal) modal.classList.remove('open'); return; }
+    var notification = event.target.closest('[data-v10-notification]');
+    if (notification) return v10MarkNotificationRead(notification.dataset.v10Notification);
+    var conversation = event.target.closest('[data-v10-conversation]');
+    if (conversation) { SGO_V10.activeConversationId=conversation.dataset.v10Conversation; SGO_V10.replyToMessageId=''; v10RenderChat(); v10MarkConversationRead(SGO_V10.activeConversationId); return; }
+    var readFeedback = event.target.closest('[data-v10-feedback-read]');
+    if (readFeedback) return v10UpdateFeedback(readFeedback.dataset.v10FeedbackRead, { read:true,readAt:new Date().toISOString(),status:'Novo feedback' });
+    var replyMessage = event.target.closest('[data-v10-reply-message]');
+    if (replyMessage) { SGO_V10.replyToMessageId=replyMessage.dataset.v10ReplyMessage; v10RenderChat(); return; }
+    if (event.target.closest('#v10CancelReply')) { SGO_V10.replyToMessageId=''; v10RenderChat(); return; }
+    if (event.target.closest('#v10LoadOlderMessages')) return v12LoadOlderMessages();
+    if (event.target.closest('#v10AddFeedback')) return v10AddFeedback();
+    if (event.target.closest('#v10SendTaskMessage')) return v10SendTaskMessage();
+    if (event.target.closest('#v10SendChat')) return v10SendActiveChatMessage();
+    if (event.target.closest('#v10CreateDirectChat')) return v10CreateDirectChat();
+    if (event.target.closest('#v10CopyDraft')) return v10CopyDraftText();
+    if (event.target.closest('#v10ConflictSync')) return v10SyncNow(true);
+    if (event.target.closest('#v10RefreshPresence')) return v10LoadPresence();
+  });
+  document.addEventListener('change', function (event) {
+    if (event.target.id === 'v10ChatType') {
+      var type = event.target.value;
+      var recipients = document.getElementById('v10DirectRecipientGroup');
+      var select = document.getElementById('v10DirectRecipient');
+      var groupName = document.getElementById('v10GroupNameWrap');
+      if (recipients) recipients.classList.toggle('hidden', type === 'area');
+      if (groupName) groupName.style.display = type === 'group' ? '' : 'none';
+      if (select) { select.multiple = type === 'group'; select.size = type === 'group' ? 7 : 1; if (type !== 'group' && select.selectedOptions.length > 1) Array.from(select.options).forEach(function(option,index){option.selected=index===select.selectedIndex;}); }
+      return;
+    }
+    if (event.target.matches('[data-v10-feedback-status]')) {
+      var patch = { status:event.target.value };
+      if (event.target.value === 'Feedback encerrado' || event.target.value === 'Correção realizada') patch.read = true;
+      v10UpdateFeedback(event.target.dataset.v10FeedbackStatus, patch);
+    }
+  });
+  window.addEventListener('beforeunload', function (event) { if (SGO_V10.dirtyTaskForm || SGO_V10.saveInProgress) { event.preventDefault(); event.returnValue=''; } });
+  window.addEventListener('online', function () { if (SGO_V10.sessionValidated) v10SyncNow(false); });
+  window.addEventListener('offline', function () { v10SetStatus('offline', 'A conexão com a internet foi interrompida.'); });
+  document.addEventListener('visibilitychange', function () { if (SGO_V10.sessionValidated) { v10StartBackgroundServices(); } });
+};
+
+initFromGoogleSheets = function () {
+  v10InstallUI();
+  v10AddFeedbackFilter();
+  if (!runningInGoogleAppsScript()) {
+    v10EnsureCollections(state);
+    SGO_V10.databaseVersion = Number(state._databaseVersion || 0);
+    SGO_V10.lastSyncedState = v10Clone(state);
+    SGO_V10.remoteReady = false;
+    window.__sgoRemoteReady = false;
+    SGO_V10.bootstrapping = true;
+    init();
+    SGO_V10.bootstrapping = false;
+    v10BindEvents();
+    v10SetStatus('local', 'Modo de demonstração local');
+    return;
+  }
+  v10SetStatus('checking', 'Carregando acesso seguro');
+  v12ServerCall('loadPublicBootstrapServer', {}, { timeoutMs:15000 })
+    .then(function (publicResult) {
+      if (!publicResult || !publicResult.success || !publicResult.data || !publicResult.data.state) throw new Error(publicResult && publicResult.message || 'A base pública não pôde ser carregada.');
+      v12ApplyState(publicResult.data.state, publicResult.databaseVersion, publicResult.data.changeSequence);
+      SGO_V10.remoteReady = true;
+      window.__sgoRemoteReady = true;
+      var stored = v12ReadSessionLocal();
+      if (!stored) return null;
+      return v12ServerCall('resumeSessionServer', { sessionToken:stored.token }, { timeoutMs:15000 })
+        .then(function (result) {
+          if (!result || !result.success || !result.data || !result.data.state || !result.data.user) {
+            v12SaveSessionLocal('', 0);
+            return null;
+          }
+          v12SaveSessionLocal(stored.token, result.data.expiresAt);
+          currentUserId = String(result.data.user.id || '');
+          storageSet(CURRENT_USER_KEY, currentUserId);
+          v12ApplyState(result.data.state, result.databaseVersion, result.data.changeSequence);
+          return result;
+        });
+    })
+    .then(function (sessionResult) {
+      startupNotice = sessionResult ? { title:'SGO conectado',message:'Sessão restaurada e dados atualizados com segurança.',type:'success' } : null;
+      SGO_V10.bootstrapping = true;
+      init();
+      SGO_V10.bootstrapping = false;
+      v10BindEvents();
+      v12LockIdentitySelector();
+      if (SGO_V10.sessionValidated) {
+        hideLoginScreen();
+        v10SetStatus('updated');
+        v10StartBackgroundServices();
+        v12152StartPostLoginLoads({loginPerf:sessionResult && sessionResult.data && sessionResult.data.loginPerf || {}});
+      } else {
+        showLoginScreen();
+        v10SetStatus('checking', 'Aguardando autenticação');
+      }
+      v10RenderNotifications();
+    })
+    .catch(function (error) {
+      SGO_V10.remoteReady = false;
+      window.__sgoRemoteReady = false;
+      startupNotice = { title:'Servidor indisponível',message:'O sistema abriu somente para consulta local. As gravações estão bloqueadas.',type:'error' };
+      SGO_V10.bootstrapping = true;
+      init();
+      SGO_V10.bootstrapping = false;
+      v10BindEvents();
+      showLoginScreen(error && error.message || 'Falha ao carregar o servidor.');
+      v10SetStatus(navigator.onLine ? 'error' : 'offline', error && error.message || 'Falha de conexão.');
+    });
+};
+
+v10CreateDirectChat = function () {
+  if (!v10CanStartWrite('criar a conversa')) return;
+  var type = document.getElementById('v10ChatType').value;
+  var select = document.getElementById('v10DirectRecipient');
+  var participants = Array.from(select.selectedOptions || []).map(function (option) { return option.value; });
+  if (type === 'direct' && participants.length !== 1) return V10_LEGACY.toast('Selecione uma pessoa', 'A conversa individual deve possuir um destinatário.', 'error');
+  if (type === 'group' && participants.length < 1) return V10_LEGACY.toast('Selecione participantes', 'Inclua pelo menos uma pessoa no grupo.', 'error');
+  var name = String(document.getElementById('v10GroupName').value || '').trim();
+  if (type === 'group' && !name) return V10_LEGACY.toast('Nome obrigatório', 'Informe o nome do grupo.', 'error');
+  var text = String(document.getElementById('v10DirectText').value || '').trim();
+  var button = document.getElementById('v10CreateDirectChat');
+  if (button.disabled) return;
+  button.disabled = true;
+  var modal = document.getElementById('v10DirectChatModal');
+  var operationId = modal && modal.dataset.operationId || v10OperationId();
+  if (modal) modal.dataset.operationId = operationId;
+  v12ServerCall('createConversationServer', v12SessionPayload({ operationId:operationId,type:type,name:name,participantIds:participants,area:currentUser().area||'' }), { timeoutMs:12000 })
+    .then(function (result) {
+      if (v12HandleSessionInvalid(result)) return;
+      if (!result || !result.success) throw new Error(result && result.message || 'Não foi possível criar a conversa.');
+      v12MergeUniqueRecords('conversations', [result.data.conversation]);
+      if (result && result.data && result.data.sequenceCursorSafe === true) SGO_V10.changeSequence = Math.max(Number(SGO_V10.changeSequence || 0), Number(result.data.sequence || 0));
+      SGO_V10.activeConversationId = result.data.conversation.id;
+      if (modal) modal.remove();
+      v10PersistLocal(true);
+      v10RenderChat();
+      if (text) { var field=document.getElementById('v10ChatText'); if(field) field.value=text; v10SendActiveChatMessage(); }
+      else V10_LEGACY.toast('Conversa criada', 'O grupo está pronto para receber mensagens.', 'success');
+    })
+    .catch(function (error) {
+      button.disabled = false;
+      if (error && error.code === 'CLIENT_TIMEOUT') {
+        V10_LEGACY.toast('Criação ainda não confirmada', 'Clique novamente para consultar o mesmo operationId sem duplicar o grupo.', 'error');
+      } else {
+        V10_LEGACY.toast('Falha ao criar conversa', error.message || 'Tente novamente.', 'error');
+      }
+    });
+};

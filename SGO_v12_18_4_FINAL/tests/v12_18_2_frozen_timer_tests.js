@@ -1,0 +1,23 @@
+const fs=require('fs');
+const path=require('path');
+const root=path.resolve(__dirname,'..');
+const html=fs.readFileSync(path.join(root,'Index.html'),'utf8');
+const task=fs.readFileSync(path.join(root,'V12_TaskOperations.gs'),'utf8');
+const gateway=fs.readFileSync(path.join(root,'V12_RpcGateway.gs'),'utf8');
+const daily=fs.readFileSync(path.join(root,'V12_TimerDaily.gs'),'utf8');
+function ok(v,m){if(!v)throw new Error(m);}
+ok(html.includes('>v12.18.3</span>'),'v12.18.3 badge missing');
+ok(html.includes('data-timer-action=\\"abandon\\"'),'timer discard button missing');
+ok(html.includes('function abandonFrozenTimedTaskV12182(taskId)'),'client frozen timer recovery missing');
+ok(html.includes("v12ServerCall('abandonTimedTaskServer'"),'client does not bypass task queue for frozen timer recovery');
+ok(html.includes('localOperationIds: pendingIds'),'client does not include pending timer operations in recovery');
+ok(task.includes('function abandonTimedTaskServer(payload)'),'server frozen timer recovery endpoint missing');
+ok(task.includes("V12182_TIMER_ABANDON_PREFIX"),'task abandon tombstone missing');
+ok(task.includes("timerActionBlockedByAbandonV12182_"),'stale timer action blocker missing');
+ok(task.includes("semanticReason:'TASK_ABANDONED_BY_USER'"),'abandoned timer semantic noop missing');
+ok(task.includes("next.status='Cancelada'"),'frozen timer is not cancelled on server');
+ok(task.includes("discardPendingClientOperationsServer({sessionToken:payload.sessionToken"),'recovery does not discard matching local queue ids on server');
+ok(gateway.includes("case 'abandonTimedTaskServer': return abandonTimedTaskServer(payload);"),'gateway route missing');
+ok(daily.includes('function finalizeV12182Deployment()'),'v12.18.3 deployment finalizer missing');
+ok(daily.includes("setMetaValue_('APP_VERSION','12.18.3')"),'finalizer does not stamp v12.18.3');
+console.log('V12_18_2_FROZEN_TIMER_TESTS_OK 14/14');

@@ -1,0 +1,34 @@
+SGO v12.18.0 — RELATÓRIO DE AUDITORIA
+
+Base usada: SGO v12.17.0 FINAL.
+Escopo deliberadamente restrito: duplicidade, cronômetro, fila e recuperação de conflitos.
+Não houve alteração funcional de login, permissões, tarefa diária, chat, processos ou layout geral.
+
+Achados tratados:
+- segundo COMPLETE podia nascer com operationId diferente;
+- CREATE local antiga podia permanecer em conflito depois de a taskId já existir no servidor;
+- ações antigas de timer podiam tentar atuar sobre tarefa já concluída;
+- uma sequência rápida do cronômetro fazia várias chamadas de aceitação concorrentes;
+- cartões locais removidos precisavam de tombstone para não reaparecer de armazenamento individual/outra aba.
+
+Controles preservados:
+- operationId e idempotência por operação;
+- expectedVersion e controle de versão;
+- dependsOnOperationId e ordem de cronômetro;
+- local-first e armazenamento durável da outbox;
+- core confirmado antes de efeitos complementares;
+- regras de autorização e campos controlados pelo servidor;
+- esforço padrão de tarefa cronometrada = 1 hora;
+- prazo automático na conclusão apenas quando não existe prazo manual.
+
+Novo controle v12.18:
+- idempotência semântica por estado atual do registro;
+- terminalidade: tarefa concluída não é reaberta por PAUSE/RESUME/WAIT antigos;
+- supressão local de CREATE/COMPLETE equivalentes;
+- recuperação local de CREATE conflitante já materializada;
+- aceitação em lote de cadeia do timer (até 10 operações).
+
+Limite conhecido:
+O Google Apps Script mantém LockService global para a escrita crítica. A v12.18 reduz
+quantidade de disputas e protege integridade, mas não transforma Sheets em banco transacional.
+A migração futura para PostgreSQL/Supabase continua recomendada depois da estabilização do SGO.

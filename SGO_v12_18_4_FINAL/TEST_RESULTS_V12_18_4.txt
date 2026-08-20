@@ -1,0 +1,53 @@
+SGO v12.18.4 — RESULTADOS DE VALIDAÇÃO
+Data: 14/08/2026
+
+1. SINTAXE
+- 9 arquivos .gs verificados com node --check: OK
+- JavaScript inline de Index.html: OK
+- Nenhuma nova duplicidade de função global introduzida: OK
+
+2. TESTES COMPORTAMENTAIS FOCADOS
+Arquivo interno de teste: test_12184.js
+Resultado: 16/16 OK
+Cobertura:
+- stale timer action após conclusão;
+- stale command por clientActionAt;
+- comando posterior não bloqueado indevidamente;
+- UPDATE não reabre tarefa concluída;
+- UPDATE não reabre tarefa cancelada;
+- processamento na mesma RPC reconhece conclusão;
+- overlay terminal;
+- batch exclui retry ainda em backoff;
+- invariantes estáticos de processNow/lock/reparo.
+
+3. TESTES DE DEPENDÊNCIA ÓRFÃ
+Arquivo interno de teste: test_orphan_12184.js
+Resultado: 8/8 OK
+Cobertura:
+- terminal + dependência MISSING -> COMPLETED semântico;
+- tarefa existente + MISSING -> dependência liberada;
+- tarefa inexistente + ação não CREATE -> REJECTED;
+- CREATE + MISSING -> dependência liberada.
+
+4. REGRESSÃO/INVARIANTES
+Arquivo interno de teste: static_validate_12184.py
+Resultado: 40/40 OK
+Inclui preservação de:
+- esforço = 1h;
+- pausa, espera e conclusão fecham sessão ativa;
+- prazo automático;
+- código de tarefa canônico;
+- descarte de tarefa travada;
+- limpeza de fila do dispositivo;
+- skip de dependências bloqueadas;
+- efeitos complementares assíncronos.
+
+5. SIMULAÇÃO DE ATUALIZAÇÃO
+- v12.18.1 + os 7 arquivos do pacote => 13 fontes de produção idênticas à v12.18.4 completa: OK
+- v12.18.3 + os 7 arquivos do pacote => 13 fontes de produção idênticas à v12.18.4 completa: OK
+
+RESULTADO
+SGO_V12_18_4_VALIDATION_OK
+
+OBSERVAÇÃO
+Estes testes verificam código e cenários simulados. A confirmação final de concorrência depende de uso real com vários navegadores/usuários no Apps Script. Após publicar, gerar novo diagnóstico depois de 15–30 minutos de uso normal.

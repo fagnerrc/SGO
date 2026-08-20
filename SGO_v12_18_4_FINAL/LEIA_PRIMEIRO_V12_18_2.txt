@@ -1,0 +1,20 @@
+SGO v12.18.2 — COMO PUBLICAR
+
+1) Faça backup do projeto atual.
+2) Substitua os 7 arquivos do pacote de atualização.
+3) Salve o projeto Apps Script.
+4) Execute finalizeV12182Deployment().
+5) Publique somente se readyForPublish=true e dependencyRepair.busy=0.
+6) Crie nova versão da implantação e publique.
+7) Abra o SGO e use Ctrl+F5. Confirme o badge v12.18.2.
+
+PARA A TAREFA CONGELADA
+- No cartão do cronômetro, clique “Descartar”.
+- Confirme a mensagem.
+- A tarefa será CANCELADA no servidor e retirada do cronômetro.
+- Não use “Descartar” em uma tarefa que ainda precisa ser concluída/salva.
+
+IMPORTANTE
+“Limpar fila antiga” e “Descartar” são ações diferentes:
+- Limpar fila antiga: abandona operações pendentes do computador.
+- Descartar: cancela a tarefa cronometrada materializada/congelada no servidor.

@@ -1,0 +1,20 @@
+SGO v12.18.2 — Recuperação de cronômetro congelado
+
+Problema tratado
+- Uma tarefa cronometrada pausada, já existente no estado/servidor, continua aparecendo no dock mesmo após limpeza de cookies.
+- A limpeza da fila local da v12.18.1 descarta operações pendentes, mas não cancela uma tarefa já materializada no servidor.
+
+Correções
+- Novo botão “Descartar” no cronômetro.
+- A ação usa endpoint direto abandonTimedTaskServer, sem depender da fila transacional da tarefa.
+- O servidor cancela a tarefa e fecha o timeTracking como terminal, preservando o registro/histórico.
+- Tombstone semântico por taskId+usuário impede CREATE/PAUSE/RESUME/WAIT/COMPLETE antigos de ressuscitarem a tarefa.
+- Operações locais da mesma tarefa informadas pelo navegador são marcadas para descarte coordenado.
+- Repetir o descarte é idempotente.
+- Se a tarefa só existia localmente, uma CREATE atrasada também é neutralizada.
+
+Preservado
+- v12.18 anti-duplicidade.
+- v12.18.1 worker que pula dependências bloqueadas, polling dependente e limpeza de fila do dispositivo.
+- Regras de permissão: só quem pode alterar a tarefa (ou perfil superior aplicável) consegue descartá-la.
+- Registro histórico: descarte usa status Cancelada, não marca a tarefa como concluída no negócio.

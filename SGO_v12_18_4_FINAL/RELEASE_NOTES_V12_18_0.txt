@@ -1,0 +1,36 @@
+SGO v12.18.0 — Anti-duplicidade e redução de contenção do cronômetro
+
+Objetivo
+- Conter os problemas observados em produção na v12.17.0: CREATE antiga em conflito,
+  duplo Finalizar, ações antigas de cronômetro reaparecendo e muitas aceitações
+  individuais disputando o ScriptLock.
+
+Correções principais
+1. Idempotência semântica no servidor
+   - CREATE da mesma taskId já existente => sucesso/no-op, sem nova tarefa e sem VERSION_CONFLICT.
+   - COMPLETE em tarefa já concluída => sucesso/no-op mesmo com outro operationId.
+   - PAUSE já pausado e RESUME já em execução => sucesso/no-op.
+   - Ações antigas de cronômetro depois de tarefa concluída => sucesso/no-op; nunca reabrem a tarefa.
+   - Recuperação do MESMO operationId continua tendo prioridade, preservando efeitos pendentes.
+
+2. Anti-duplicidade no navegador
+   - CREATE e COMPLETE equivalentes reaproveitam a operação ativa existente.
+   - O fluxo de conclusão verifica a outbox antes e depois da confirmação visual.
+   - Um START com CREATE ainda pendente do mesmo usuário recupera a tarefa existente em vez de gerar novo taskId.
+
+3. Recuperação da fila local
+   - CREATE em conflito é removida localmente quando a mesma taskId já está confirmada no servidor.
+   - Ações de cronômetro pendentes são descartadas localmente somente quando o servidor já confirma a tarefa como concluída/auditada.
+   - Remoções usam tombstone do armazenamento individual para não reaparecerem em outra aba.
+
+4. Aceitação em lote do cronômetro
+   - Cadeias rápidas de até 10 ações do mesmo timerSlot usam acceptTaskOperationBatchServer.
+   - Uma autenticação + um ScriptLock curto + uma gravação setValues em lote.
+   - Cada ação preserva operationId, expectedVersion e dependsOnOperationId próprios.
+   - A execução continua ordenada pela dependência já introduzida na v12.17.
+
+Observação importante
+- Esta versão reduz bastante a pressão sobre a fila e impede duplicidade semântica,
+  mas o backend continua sendo Google Apps Script/Sheets. SERVER_BUSY ainda pode ocorrer
+  sob concorrência real; a diferença é que retries equivalentes não devem criar nova tarefa
+  nem reabrir/concluir duas vezes a mesma tarefa.

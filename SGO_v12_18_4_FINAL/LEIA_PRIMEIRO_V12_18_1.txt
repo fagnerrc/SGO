@@ -1,0 +1,31 @@
+SGO v12.18.1 — COMO IMPLEMENTAR
+
+1) Faça uma cópia do projeto Apps Script atual.
+2) Substitua somente estes 7 arquivos:
+   - Code.gs
+   - Index.html
+   - V12_Diagnostics.gs
+   - V12_RpcGateway.gs
+   - V12_SecuritySync.gs
+   - V12_TaskOperations.gs
+   - V12_TimerDaily.gs
+3) Salve tudo.
+4) No editor Apps Script, execute: finalizeV12181Deployment()
+5) Publique somente se o retorno tiver:
+   - success: true
+   - confirmed: true
+   - readyForPublish: true
+   - version: "12.18.1"
+   - dependencyRepair.busy: 0
+   - queueScheduler.skipBlockedDependencies: true
+   - queueScheduler.dependencyAwarePolling: true
+   - queueScheduler.coordinatedDeviceReset: true
+6) Faça nova versão da implantação do Web App.
+7) Nos computadores, use Ctrl+F5 e confirme o badge v12.18.1.
+
+PARA COMPUTADORES COM FILA ANTIGA
+Abra o ícone da fila de sincronização e clique em “Limpar fila antiga”.
+
+ATENÇÃO: a limpeza descarta alterações pendentes daquele usuário/dispositivo que ainda não foram confirmadas. O que já estiver salvo no servidor não é apagado. Um backup JSON da fila é baixado automaticamente antes do descarte.
+
+Depois da limpeza, aguarde a sincronização completa. Não use “Tentar agora” repetidamente em filas antigas antes de decidir se quer salvá-las ou descartá-las.

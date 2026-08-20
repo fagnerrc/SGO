@@ -1,0 +1,44 @@
+SGO v12.18.3 — COMO ATUALIZAR A PARTIR DA v12.18.1
+
+1. Substitua estes 7 arquivos no Apps Script:
+   Code.gs
+   Index.html
+   V12_Diagnostics.gs
+   V12_RpcGateway.gs
+   V12_SecuritySync.gs
+   V12_TaskOperations.gs
+   V12_TimerDaily.gs
+
+2. Salve todos os arquivos.
+
+3. Execute manualmente:
+   finalizeV12183Deployment()
+
+4. NÃO publique até o retorno conter:
+   success: true
+   confirmed: true
+   readyForPublish: true
+   version: "12.18.3"
+   dependencyRepair.busy: 0
+   taskCodeRepair.busy: 0
+   taskCodeRepair.success: true
+   taskIdentity.serverAllocatedCode: true
+   taskIdentity.duplicateCodeRepair: true
+   queueScheduler.stuckTaskDirectDiscard: true
+
+5. Observe taskCodeRepair.updated.
+   - 0 = nenhum código duplicado ativo precisou ser renumerado.
+   - maior que 0 = o SGO encontrou duplicidades e atribuiu novos códigos às cópias necessárias.
+
+6. Faça uma NOVA versão da implantação Web App.
+
+7. Nos computadores dos usuários, pressione Ctrl+F5 e confirme o badge v12.18.3.
+
+8. Para tarefa cronometrada antiga que continua presa na fila:
+   abra Fila de sincronização e clique em “Descartar tarefa travada”.
+   Isso abandona somente aquela taskId e remove as operações antigas daquele computador.
+
+9. Para um computador inteiro contaminado por dezenas de operações antigas que podem ser esquecidas:
+   use “Limpar fila antiga”.
+
+NÃO apague manualmente as planilhas de banco/fila.
