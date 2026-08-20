@@ -1,0 +1,21 @@
+# Segredos e credenciais - NUNCA versionar
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*credentials*
+*secret*
+config.local.*
+
+# Ferramentas locais
+.claude/
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sistema
+.DS_Store
+Thumbs.db
