@@ -30,7 +30,7 @@ window.__sgoRemoteReady = false;
 window.__sgoServerSaveTimer = null;
 window.__sgoLastServerSave = '';
 var APP_VERSION = 12;
-var SGO_BUILD_VERSION = '12.18.3';
+var SGO_BUILD_VERSION = '12.18.4';
 var STORAGE_KEY = 'sgo_grupo_quintao_v10';
 var STORAGE_BACKUP_KEY = "".concat(STORAGE_KEY, "_last_good");
 var STORAGE_TEMP_KEY = "".concat(STORAGE_KEY, "_pending");
@@ -392,7 +392,7 @@ function normalizeState(input, options) {
         else
             person.empresasAcesso = uniqueStrings(person.empresasAcesso).filter(function (company) { return companies.includes(company); });
     });
-    // v12.18.3: códigos confirmados pelo servidor são imutáveis no navegador.
+    // v12.18.4: códigos confirmados pelo servidor são imutáveis no navegador.
     // Versões anteriores "corrigiam" duplicidades dentro de normalizeState(), mas
     // cada usuário vê um subconjunto diferente de tarefas e podia renumerar o mesmo
     // registro de forma diferente. Agora só um rascunho estritamente local recebe
@@ -411,7 +411,7 @@ function normalizeState(input, options) {
         var normalizedCode = String(task.code || '').toUpperCase();
         var confirmedByServer = Number(task._recordVersion || 0) > 0 && task._pendingSync !== true;
         if (confirmedByServer) {
-            // Nunca altera identidade humana já confirmada. O reparo v12.18.3 no
+            // Nunca altera identidade humana já confirmada. O reparo v12.18.4 no
             // servidor resolve códigos duplicados e o próximo sync traz o canônico.
             task.code = normalizedCode;
             return;
@@ -3574,7 +3574,7 @@ function v10InstallUI() {
     var errorsPage = document.createElement('section');
     errorsPage.className = 'page';
     errorsPage.id = 'page-erros';
-    errorsPage.innerHTML = '<div class="section-header"><div><h3>Central administrativa de erros</h3><p>Falhas registradas pelo navegador e pelo servidor.</p></div><div class="section-actions"><button class="btn btn-outline" id="v10RefreshErrors"><i data-lucide="refresh-cw"></i>Atualizar</button><button class="btn btn-outline" id="v128GenerateDiagnostic"><i data-lucide="file-down"></i>Gerar diagnóstico</button><button class="btn btn-primary" id="v10OpenProblem"><i data-lucide="message-square-warning"></i>Informar problema</button></div></div><div class="info-note" style="margin-bottom:14px"><strong>Diagnóstico técnico v12.18.3</strong> registra fila, chamadas lentas, falhas do navegador e etapas do servidor sem incluir PINs, tokens ou conteúdo integral das tarefas. Use “Gerar diagnóstico” para baixar um JSON e enviar ao suporte.</div><div id="v10ErrorsContent"></div>';
+    errorsPage.innerHTML = '<div class="section-header"><div><h3>Central administrativa de erros</h3><p>Falhas registradas pelo navegador e pelo servidor.</p></div><div class="section-actions"><button class="btn btn-outline" id="v10RefreshErrors"><i data-lucide="refresh-cw"></i>Atualizar</button><button class="btn btn-outline" id="v128GenerateDiagnostic"><i data-lucide="file-down"></i>Gerar diagnóstico</button><button class="btn btn-primary" id="v10OpenProblem"><i data-lucide="message-square-warning"></i>Informar problema</button></div></div><div class="info-note" style="margin-bottom:14px"><strong>Diagnóstico técnico v12.18.4</strong> registra fila, chamadas lentas, falhas do navegador e etapas do servidor sem incluir PINs, tokens ou conteúdo integral das tarefas. Use “Gerar diagnóstico” para baixar um JSON e enviar ao suporte.</div><div id="v10ErrorsContent"></div>';
     content.appendChild(errorsPage);
   }
 
@@ -3724,7 +3724,7 @@ function v128DiagEvent(level, moduleName, step, details) {
       action:String(details.action || ''), status:String(details.status || ''), errorCode:String(details.errorCode || ''),
       message:v128DiagSafeText(details.message || '', 1000), durationMs:Math.max(0,Number(details.durationMs || 0)),
       attempt:Math.max(0,Number(details.attempt || 0)), databaseVersion:Number(SGO_V10 && SGO_V10.databaseVersion || 0),
-      recordVersion:Math.max(0,Number(details.recordVersion || 0)), online:navigator.onLine, appVersion:'v12.18.3',
+      recordVersion:Math.max(0,Number(details.recordVersion || 0)), online:navigator.onLine, appVersion:'v12.18.4',
       context:Object.assign({ page:String(currentPage || ''), visibility:document.visibilityState, syncStatus:String(SGO_V10 && SGO_V10.status || ''),
         functionName:String(details.functionName || ''), payloadSize:Number(details.payloadSize || 0), queueStatus:String(details.queueStatus || ''),
         queueSize:Number(details.queueSize || 0), browser:String(navigator.userAgent || '').slice(0,300) }, details.context || {})
@@ -6557,8 +6557,25 @@ v10CreateDirectChat = function () {
     return Number.isFinite(prediction) ? prediction : null;
   }
 
+  function queueTaskTerminalV12184_(task) {
+    if(!task)return false;
+    var tracking=task.timeTracking&&typeof task.timeTracking==='object'?task.timeTracking:{};
+    return ['Concluída','Auditada','Cancelada'].indexOf(String(task.status||''))>=0 || String(tracking.state||'')==='completed' || Boolean(task.concluidoEm) || Boolean(task._timerAbandonedAt);
+  }
+
+  function queueWouldResurrectTerminalV12184_(taskId, optimisticTask) {
+    var confirmed=queueConfirmedTask(taskId);
+    return Boolean(confirmed && queueTaskTerminalV12184_(confirmed) && !queueTaskTerminalV12184_(optimisticTask));
+  }
+
   function queueMarkOptimistic(collection, recordId, data, status, operationId, predictedVersion, errorMessage) {
     if (!data || collection !== 'tasks') return;
+    if(queueWouldResurrectTerminalV12184_(recordId,data)){
+      var confirmedV12184=queueConfirmedTask(recordId);
+      if(confirmedV12184)v12PatchCollection('tasks',recordId,queueClone(confirmedV12184),false);
+      v128DiagEvent('WARN','timer','STALE_TIMER_OVERLAY_SUPPRESSED',{operationId:String(operationId||''),entityId:String(recordId||''),status:'suppressed',context:{pendingStatus:String(status||''),serverStatus:String(confirmedV12184&&confirmedV12184.status||'')}});
+      return;
+    }
     var optimistic = queueClone(data);
     optimistic._pendingSync = true;
     optimistic._pendingStatus = status || 'queued';
@@ -6963,9 +6980,18 @@ v10CreateDirectChat = function () {
     Object.keys(latestByTask).forEach(function (taskId) {
       var item = latestByTask[taskId];
       var optimisticTaskV1214 = item.optimisticTask || item.payload.task;
+      var resurrectsTerminalV12184=queueWouldResurrectTerminalV12184_(taskId,optimisticTaskV1214);
       queueMarkOptimistic('tasks', taskId, optimisticTaskV1214, item.status, item.operationId, item.predictedVersion, item.lastError || '');
-      if (SGO_V10.lastSyncedState) queuePatchStateObject(SGO_V10.lastSyncedState, 'tasks', taskId, optimisticTaskV1214, false);
+      if (SGO_V10.lastSyncedState && !resurrectsTerminalV12184) queuePatchStateObject(SGO_V10.lastSyncedState, 'tasks', taskId, optimisticTaskV1214, false);
     });
+  }
+
+  function queueTimerChainValidV12184_(item) {
+    if(!item||item.kind!=='task'||item.module!=='timer'||!queueIsActiveState(item.status))return false;
+    var confirmed=queueConfirmedTask(item.entityId);
+    if(confirmed && queueTaskTerminalV12184_(confirmed))return false;
+    if(item.waitingDependency===true && String(item.dependencyStatus||'').toUpperCase()==='MISSING' && Date.now()-Number(item.createdAtMs||0)>120000)return false;
+    return true;
   }
 
   function queueRepairTimerChainsV1217_() {
@@ -6991,11 +7017,12 @@ v10CreateDirectChat = function () {
     if(Object.keys(remove).length) items=items.filter(function(item){return !remove[item.operationId];});
     var lastBySlot={};
     items.slice().sort(function(a,b){return queueOrderValue(a)-queueOrderValue(b);}).forEach(function(item){
-      if(!item||item.kind!=='task'||item.module!=='timer'||!queueIsActiveState(item.status))return;
+      if(!queueTimerChainValidV12184_(item))return;
       var slot=(item.entityKeys||[]).find(function(key){return String(key).indexOf('timerSlot:')===0;})||'';
       var previous=slot?lastBySlot[slot]:null;
-      if(previous&&String(item.payload&&item.payload.dependsOnOperationId||'')!==String(previous.operationId||'')){
-        item.dependsOnOperationId=String(previous.operationId||''); item.payload=item.payload||{}; item.payload.dependsOnOperationId=item.dependsOnOperationId; changed=true;
+      var desiredDependencyV12184=previous?String(previous.operationId||''):'';
+      if(!item.serverAccepted && String(item.payload&&item.payload.dependsOnOperationId||'')!==desiredDependencyV12184){
+        item.dependsOnOperationId=desiredDependencyV12184; item.payload=item.payload||{}; item.payload.dependsOnOperationId=desiredDependencyV12184; changed=true;
       }
       if(slot)lastBySlot[slot]=item;
     });
@@ -7026,7 +7053,7 @@ v10CreateDirectChat = function () {
       if (candidate.status === 'rejected' && queueOrderValue(candidate) <= itemTime && (candidate.entityKeys||[]).some(function(key){return sameKeys.indexOf(key)>=0;})) return false;
       return true;
     });
-    // v12.18.3: quando CREATE recebe o código canônico do servidor, atualiza
+    // v12.18.4: quando CREATE recebe o código canônico do servidor, atualiza
     // também todas as operações posteriores da mesma taskId. Sem isso, um PAUSE
     // otimista antigo poderia recolocar temporariamente o código duplicado na UI.
     var canonicalTaskV12183 = result && result.data && result.data.task || null;
@@ -7118,9 +7145,14 @@ v10CreateDirectChat = function () {
     if(!item||item.kind!=='task'||item.module!=='timer'||item.serverAccepted)return [];
     var slotKey=(item.entityKeys||[]).find(function(key){return String(key||'').indexOf('timerSlot:')===0;})||'';
     if(!slotKey)return [item];
+    var nowV12184=Date.now();
     return queueForCurrentUser().filter(function(candidate){
       if(!candidate||candidate.kind!=='task'||candidate.module!=='timer'||candidate.serverAccepted||!queueIsActiveState(candidate.status))return false;
-      if(['queued','retry_wait','sending'].indexOf(String(candidate.status||''))<0)return false;
+      var statusV12184=String(candidate.status||'');
+      if(['queued','retry_wait','sending'].indexOf(statusV12184)<0)return false;
+      if(Number(candidate.nextAttemptAt||0)>nowV12184)return false;
+      if(statusV12184==='sending'&&String(candidate.operationId)!==String(item.operationId))return false;
+      if(!queueTimerChainValidV12184_(candidate))return false;
       return (candidate.entityKeys||[]).indexOf(slotKey)>=0;
     }).sort(function(a,b){return queueOrderValue(a)-queueOrderValue(b);}).slice(0,10);
   }
@@ -7158,7 +7190,7 @@ v10CreateDirectChat = function () {
           current.status = 'server_received';
           current.serverAcceptedAtMs = Number(current.serverAcceptedAtMs || Date.now());
           current.nextAttemptAt = Date.now() + Math.max(15000, Number(delayMs || 15000));
-          current.waitingDependency=Boolean(meta&&meta.waitingDependency); current.dependsOnOperationId=String(meta&&meta.dependsOnOperationId||current.dependsOnOperationId||'');
+          current.waitingDependency=Boolean(meta&&meta.waitingDependency); current.dependsOnOperationId=String(meta&&meta.dependsOnOperationId||current.dependsOnOperationId||''); current.dependencyStatus=String(meta&&meta.dependencyStatus||current.dependencyStatus||'');
           current.updatedAt = queueNowIso();
           queueWriteAll(items); queueRender();
         }
@@ -7208,7 +7240,11 @@ v10CreateDirectChat = function () {
             // confirma que a dependência ficou terminal, damos um único kick imediato.
             if(status==='received'&&data.waitingDependency===true)return interpreted;
             if(status==='received'&&data.hasDependency&&data.waitingDependency===false&&Date.now()-lastKick>=5000)return processAccepted();
-            if(status==='received'&&!data.hasDependency&&Date.now()-lastKick>=60000)return processAccepted();
+            if(status==='received'&&!data.hasDependency){
+              var serverNextV12184=data.nextAttemptAt?new Date(data.nextAttemptAt).getTime():0;
+              var serverReadyV12184=!Number.isFinite(serverNextV12184)||serverNextV12184<=Date.now();
+              if(serverReadyV12184&&Date.now()-lastKick>=30000)return processAccepted();
+            }
             return interpreted;
           });
       };
@@ -7222,7 +7258,7 @@ v10CreateDirectChat = function () {
 
       var timerBatchV1218=queueTimerBatchCandidatesV1218(item);
       if(item.module==='timer'&&timerBatchV1218.length>1){
-        var batchPayloadV1218={operationId:'batch_'+String(item.operationId||''),operations:timerBatchV1218.map(function(candidate){var payload=queueClone(candidate.payload||{});payload.clientAttempt=Math.max(1,Number(candidate.attempts||1));return payload;})};
+        var batchPayloadV1218={operationId:'batch_'+String(item.operationId||''),processNow:true,processOperationId:String(item.operationId||''),operations:timerBatchV1218.map(function(candidate){var payload=queueClone(candidate.payload||{});payload.clientAttempt=Math.max(1,Number(candidate.attempts||1));return payload;})};
         var batchStartedAtV1218=Date.now();
         v128DiagEvent('INFO','queue','OUTBOX_BATCH_ACCEPT_START',{operationId:item.operationId,entityId:item.entityId,action:item.action,status:'sending',attempt:item.attempts,context:{batchSize:timerBatchV1218.length}});
         return v12ServerCall('acceptTaskOperationBatchServer',v12SessionPayload(batchPayloadV1218),{timeoutMs:9000,timeoutMessage:'As ações do cronômetro continuam salvas neste dispositivo; o lote será reenviado com os mesmos identificadores.'})
@@ -7231,12 +7267,14 @@ v10CreateDirectChat = function () {
             if(!batchResult||!batchResult.success||!batchResult.confirmed)return batchResult;
             var immediateResultV1218=queueApplyBatchAcceptV1218(batchResult,item.operationId);
             if(immediateResultV1218)return immediateResultV1218;
-            return processAccepted();
+            markServerReceived(15000,batchResult.data&&batchResult.data.processMeta||{});
+            return {__queuePending:true,raw:batchResult};
           });
       }
 
       var acceptPayload = queueClone(item.payload || {});
       acceptPayload.clientAttempt = Math.max(1, Number(item.attempts || 1));
+      acceptPayload.processNow = true;
       var acceptStartedAtV1216 = Date.now();
       v128DiagEvent('INFO','queue','OUTBOX_ACCEPT_START',{operationId:item.operationId,entityId:item.entityId,action:item.action,status:'sending',attempt:item.attempts});
       return v12ServerCall('acceptTaskOperationServer', v12SessionPayload(acceptPayload), { timeoutMs:8000, timeoutMessage:'A tarefa continua salva neste dispositivo; tentaremos registrá-la no servidor novamente.' })
@@ -7260,10 +7298,11 @@ v10CreateDirectChat = function () {
             v128DiagEvent('INFO','timer','TIMER_CHAIN_PREACCEPTED',{operationId:current.operationId,entityId:current.entityId,action:current.action,status:'server_received'});
             return {__queuePending:true,__preAcceptedChain:true,raw:accepted};
           }
-          // Um único kick imediato dá baixa latência quando o servidor está livre.
-          // Se demorar, o Apps Script continua a execução mesmo após o timeout do
-          // navegador; dali em diante o cliente só consulta status.
-          return processAccepted();
+          // v12.18.4: acceptTaskOperationServer já tentou processar na mesma RPC.
+          // Se continuou RECEIVED, respeitamos o backoff do servidor e apenas pollamos;
+          // isso elimina a segunda RPC accept -> process que congestionava o ScriptLock.
+          markServerReceived(data.waitingDependency?20000:15000,data);
+          return {__queuePending:true,raw:accepted};
         });
     }
     var functionName = item.serverFunction;
@@ -7729,7 +7768,7 @@ v10CreateDirectChat = function () {
   window.addEventListener('online', function () { queueProcessSoon(0); });
 
   /* ========================================================================
-   * SGO v12.18.3 — cronômetro local-first com compactação e dependências duráveis no servidor.
+   * SGO v12.18.4 — cronômetro local-first com compactação e dependências duráveis no servidor.
    * A interface nunca espera o servidor para pausar/esperar/concluir. A operação
    * é persistida primeiro na outbox local (localStorage + IndexedDB) e todas as
    * ações de cronômetro do usuário compartilham timerSlot:<userId>, preservando

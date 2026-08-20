@@ -10,7 +10,7 @@ core = (ROOT / 'V10_Core.html').read_text(encoding='utf-8')
 assembled = index.replace("<?!= include('V10_Styles'); ?>", styles).replace("<?!= include('V10_Core'); ?>", core)
 if '<?!=' in assembled:
     raise SystemExit('Falha: existe include de template não resolvido na prévia.')
-(ROOT / 'Index_assembled_preview.html').write_text(assembled, encoding='utf-8')
+(ROOT / 'Index_assembled_preview.NAO_USAR_EM_PRODUCAO.html').write_text(assembled, encoding='utf-8')
 blocks = []
 for match in re.finditer(r'<script\b([^>]*)>([\s\S]*?)</script>', assembled, re.I):
     attrs = match.group(1) or ''

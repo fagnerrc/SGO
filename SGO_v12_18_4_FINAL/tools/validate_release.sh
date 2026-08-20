@@ -28,7 +28,7 @@ node "$ROOT/tests/v12_18_1_queue_recovery_tests.js"
 node "$ROOT/tests/v12_18_2_frozen_timer_tests.js"
 node "$ROOT/tests/v12_18_3_task_identity_tests.js"
 node "$ROOT/tests/server_mock_tests.js"
-if grep -R "<?!=" "$ROOT/Index_assembled_preview.html" >/dev/null; then
+if grep -R "<?!=" "$ROOT/Index_assembled_preview.NAO_USAR_EM_PRODUCAO.html" >/dev/null; then
   echo "ERRO: include não resolvido na prévia" >&2
   exit 1
 fi

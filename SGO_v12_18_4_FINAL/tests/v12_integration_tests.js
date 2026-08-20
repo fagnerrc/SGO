@@ -231,7 +231,7 @@ seedLegacy(legacy);
 
 const setup = context.setupSGO();
 assert(setup && setup.success, 'setup did not complete v12.15');
-assert(String(setup.message || '').includes('v12.18.3'), 'setup version message missing');
+assert(String(setup.message || '').includes('v12.18.4'), 'setup version message missing');
 ((setup.data && setup.data.temporaryPins) || []).forEach((entry) => {
   const person = legacy.collaborators.find((item) => item.id === entry.userId);
   if (person) integrationPins[person.email] = String(entry.pin || '');
@@ -248,7 +248,7 @@ assert(deploymentFinalizer && deploymentFinalizer.success && deploymentFinalizer
 assert.strictEqual(deploymentFinalizer.readyForPublish, true, 'v12.15 finalizer did not authorize publication in a consistent state');
 assert(deploymentFinalizer.dailyAutomation && deploymentFinalizer.dailyAutomation.guaranteed === true, 'v12.15 finalizer did not guarantee daily automation');
 assert.deepStrictEqual(Array.from(deploymentFinalizer.timerConflicts || []), [], 'v12.15 finalizer detected unexpected timer conflicts');
-assert.strictEqual(deploymentFinalizer.version, '12.18.3', 'v12.18 finalizer reported wrong version');
+assert.strictEqual(deploymentFinalizer.version, '12.18.4', 'v12.18 finalizer reported wrong version');
 
 const publicBoot = context.loadPublicBootstrapServer();
 assertSuccess(publicBoot, 'public bootstrap');
