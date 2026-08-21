@@ -175,6 +175,37 @@ determined whether a bug was even reachable:
 resume — the completion flow above used a non-timed task), and everything not built yet per the
 phase 6 gaps list (chat UI, notifications UI, admin UI, local-first outbox).
 
+## DEPLOYMENT — the frontend is live, publicly, at a real URL (2026-08-21)
+
+Two of the three hard blockers from the "what's missing to actually use this" discussion are now
+closed (bootstrapping a real company is the one left — deliberately not done, since it's the
+user's own company to create, not something to do speculatively).
+
+- **Primary: https://grupo-quintao-sgo.vercel.app** — deployed via the Vercel CLI (personal
+  access token, same pattern as the Supabase CLI setup earlier), project created directly through
+  the Vercel API (`POST /v10/projects`) with the name `grupo-quintao-sgo` specifically so the URL
+  wouldn't carry a personal GitHub username the way GitHub Pages does (project-page URLs there are
+  `<github-account>.github.io/<repo>`, tied to who owns the repo — not renameable without either
+  creating a GitHub organization and transferring the repo, or a custom domain).
+- **Mirror: https://fagnerrc.github.io/SGO/** — `.github/workflows/deploy-frontend.yml`, builds
+  and deploys automatically on every push to `master` touching `SGO_Supabase/`. Kept running
+  alongside Vercel as a zero-maintenance second copy, not replaced.
+- **Real bug caught on the first Vercel deploy attempt**: `vite.config.ts`'s `base` path was
+  hardcoded to `/SGO/` for every production build — correct for GitHub Pages' project-page path,
+  wrong for Vercel (served from the domain root), and broke every JS/CSS asset load with 404s.
+  Fixed with a `VITE_BASE_PATH` env var that only the GitHub Actions workflow sets; Vercel's
+  build has no such var and correctly falls back to `/`. Verified by reading the actual built
+  `index.html`'s asset paths before redeploying, then confirming in a real browser against the
+  live Vercel URL.
+- Full login → task list flow re-verified end-to-end against the Vercel URL specifically (not
+  just assumed to work because GitHub Pages did) — same result: real bootstrap, real login,
+  real session.
+- `npm install`-ing the Vercel CLI surfaced 30 `npm audit` findings (1 critical) in its own
+  transitive dependencies (`@vercel/fun`, `ajv`, etc.) — all local build-tooling only, never
+  shipped in the deployed `dist/` bundle, same category as the pre-existing Vite/esbuild
+  dev-server-only finding. Not fixed (would mean downgrading the CLI); accepted for the same
+  reason.
+
 ## TASK CREATION SCREEN — built and tested through a real browser (2026-08-21)
 
 The single hardest blocker to anyone actually using this system: there was no way to create a
