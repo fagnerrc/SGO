@@ -1382,6 +1382,100 @@ a {
 }
 
 /* ---------------------------------------------------------------- */
+/* Timer dock — floating, survives navigation between routes          */
+/* ---------------------------------------------------------------- */
+
+.timer-dock {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0.7rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+}
+.timer-dock-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.timer-dock-code {
+  font-size: 0.7rem;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.timer-dock-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--heading);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timer-dock-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--primary);
+  flex: 0 0 auto;
+}
+.timer-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.timer-dock-actions button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.78rem;
+  border-radius: 999px;
+}
+.timer-dock-actions .btn-outline {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.timer-dock-actions button:not(.link-button):not(.btn-outline) {
+  border: none;
+  background: var(--primary);
+  color: #fff;
+}
+@media (max-width: 640px) {
+  .timer-dock {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+  }
+  .timer-dock-title {
+    max-width: 90px;
+  }
+}
+
+.quick-start-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.5rem 0.9rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.quick-start-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* ---------------------------------------------------------------- */
 /* Modal                                                              */
 /* ---------------------------------------------------------------- */
 

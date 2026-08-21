@@ -3,9 +3,11 @@ import { logout } from "../lib/auth";
 import { listMyNotifications, markNotificationRead, type AppNotification } from "../lib/notifications";
 import { getMyProfile } from "../lib/profiles";
 import { clearSession } from "../lib/session";
-import { listMyTasks } from "../lib/tasks";
+import { createTask, getActiveTimerTask, listMyTasks, startTask } from "../lib/tasks";
 import type { Profile, Task } from "../lib/types";
 import { initials } from "./badges";
+import { openFormModal } from "./modal";
+import { refreshTimerDock } from "./timerDock";
 
 export type PageKey = "dashboard" | "mywork" | "tasks" | "kanban" | "approvals" | "collaborators" | "processes" | "settings";
 
@@ -125,6 +127,10 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
         <div id="topbar-search-results" class="topbar-search-results" hidden></div>
       </div>
       <div class="topbar-actions">
+        <button type="button" id="quick-start-btn" class="quick-start-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Iniciar tarefa
+        </button>
         <div class="topbar-menu-wrap">
           <button id="notif-btn" class="topbar-icon-btn" aria-label="Notificações">
             ${BELL_ICON}
@@ -171,6 +177,52 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
   setupDropdown(root, "#notif-btn", "#notif-panel", () => loadNotifications(root));
   setupDropdown(root, "#user-btn", "#user-panel");
   setupSearch(root);
+
+  root.querySelector("#quick-start-btn")!.addEventListener("click", () => void quickStartTimer(profile));
+}
+
+// "Iniciar tarefa" — the old system's fastest path to registering work:
+// skip the full task form entirely, just ask what you're about to do,
+// and start the timer immediately. Enforces "only one active timer per
+// person" by checking before creating anything, rather than letting a
+// second one start and only noticing later.
+async function quickStartTimer(profile: Profile | null): Promise<void> {
+  if (!profile) return;
+
+  const existing = await getActiveTimerTask(profile.id).catch(() => null);
+  if (existing) {
+    alert(`Você já tem um cronômetro rodando em "${existing.titulo}" (${existing.code ?? ""}). Abrindo essa tarefa.`);
+    location.hash = `#/tasks/${existing.id}`;
+    return;
+  }
+
+  const values = await openFormModal({
+    title: "Iniciar tarefa",
+    description: "Descreva rapidamente o que você vai fazer agora — o cronômetro começa assim que confirmar.",
+    fields: [{ name: "descricao", label: "Descrição da atividade", type: "textarea", required: true }],
+    confirmLabel: "Iniciar",
+  });
+  if (!values) return;
+
+  const descricao = values.descricao.trim();
+  const titulo = descricao.split("\n")[0].slice(0, 80);
+
+  try {
+    const result = await createTask({
+      titulo,
+      descricao,
+      area: profile.area || "Geral",
+      tipo: "Tarefa cronometrada",
+      responsavelId: profile.id,
+      prioridade: "Normal",
+      risco: "Baixo",
+    });
+    await startTask(result.id);
+    await refreshTimerDock();
+    location.hash = `#/tasks/${result.id}`;
+  } catch (err) {
+    alert(err instanceof Error ? err.message : String(err));
+  }
 }
 
 function setupDropdown(root: HTMLElement, btnSelector: string, panelSelector: string, onOpen?: () => void): void {

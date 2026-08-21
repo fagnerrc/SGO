@@ -12,6 +12,23 @@ function newOperationId(): string {
   return crypto.randomUUID();
 }
 
+// The "one active timer per person" rule (checklist part 4) is enforced
+// client-side by checking this before starting a new timed task —
+// nothing in the schema stops a second concurrent `timer_state=running`
+// row today, so this is advisory, not a hard guarantee under a race.
+export async function getActiveTimerTask(profileId: string): Promise<Task | null> {
+  const { data, error } = await getClient()
+    .from("tasks")
+    .select("*")
+    .eq("responsavel_id", profileId)
+    .eq("timer_state", "running")
+    .eq("excluido", false)
+    .limit(1)
+    .maybeSingle();
+  if (error) throwSupabaseError(error);
+  return (data as Task | null) ?? null;
+}
+
 export async function listMyTasks(): Promise<Task[]> {
   const { data, error } = await getClient()
     .from("tasks")

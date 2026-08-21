@@ -437,6 +437,32 @@ Testado no navegador contra a conta real: a única tarefa existente ("Teste", em
 aprovação") apareceu corretamente na aba Aguardando com contador 1 e nas demais abas com 0, e o
 clique no card navegou certo para o detalhe da tarefa.
 
+### Parte 4 — Cronômetro rápido + regra de um ativo + Timer Dock ✅
+
+`getActiveTimerTask(profileId)` (`lib/tasks.ts`) — consulta se já existe uma tarefa com
+`timer_state = 'running'` para a pessoa; advisory apenas (não é uma trava no schema, só checado
+antes de criar uma nova).
+
+Botão "Iniciar tarefa" na barra superior (`nav.ts`) abre um modal pedindo só a descrição da
+atividade; ao confirmar, checa `getActiveTimerTask()` primeiro — se já existe uma rodando, avisa e
+abre ela em vez de criar outra; senão, cria uma `Tarefa cronometrada` (título = primeira linha da
+descrição, até 80 caracteres) e chama `start_task` na hora.
+
+Timer Dock (`views/timerDock.ts`, novo): um card flutuante fixo no canto inferior direito,
+montado fora de `#app` (novo `#timer-dock-mount` em `index.html`, inicializado em `main.ts`) —
+por isso sobrevive à troca de rota, que normalmente reescreve `#app` inteiro. Atualiza o tempo a
+cada segundo lendo `timer_total_ms` + tempo decorrido desde `timer_active_started_at`, faz um
+poll a cada 20s e a cada troca de hash (pra pegar cronômetros iniciados em outra aba/dispositivo),
+e some sozinho quando não há timer `running` — inclusive imediatamente depois de pausar, já que
+"pausado" para de contar tempo trabalhado por definição. Botões Abrir/Pausar/Concluir direto no
+dock, sem precisar voltar pra tela da tarefa.
+
+Testado de ponta a ponta: cliquei em "Iniciar tarefa", preenchi a descrição, confirmei que a
+tarefa foi criada com o cronômetro já rodando e o dock apareceu contando; naveguei para outra
+tela e o dock continuou lá, contando; cliquei em "Iniciar tarefa" de novo e confirmei que o
+sistema recusou criar uma segunda e abriu a que já estava rodando; pausei pelo dock e confirmei
+que ele sumiu (estado correto). Tarefa de teste apagada depois.
+
 ## VISUAL REDESIGN v2 — configurable branding + real charts (2026-08-21)
 
 The first visual pass (dark green sidebar) didn't land — "do jeito que ficou foi muito ruim". The
