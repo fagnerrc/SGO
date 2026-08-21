@@ -32,6 +32,34 @@ export function resetBrandingCache(): void {
   cached = null;
 }
 
+const MAX_LOGO_BYTES = 5 * 1024 * 1024;
+const ALLOWED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+export async function uploadLogo(file: File): Promise<string> {
+  if (!ALLOWED_LOGO_TYPES.has(file.type)) {
+    throw new Error("Formato não suportado — envie PNG, JPG ou WebP.");
+  }
+  if (file.size > MAX_LOGO_BYTES) {
+    throw new Error("Arquivo maior que 5 MB.");
+  }
+
+  const { data: companyId, error: companyError } = await getClient().rpc("current_company");
+  if (companyError) throwSupabaseError(companyError);
+
+  const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  // A fresh filename per upload (not a fixed "logo.<ext>") sidesteps CDN/
+  // browser caching entirely — reusing the same path would mean some
+  // visitors keep seeing the old logo after a change until their cache
+  // expires.
+  const path = `${companyId}/logo-${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await getClient().storage.from("branding-logos").upload(path, file, { upsert: true });
+  if (uploadError) throw new Error(uploadError.message);
+
+  const { data } = getClient().storage.from("branding-logos").getPublicUrl(path);
+  return data.publicUrl;
+}
+
 export async function updateBranding(input: { accentColor: string; displayName: string; logoUrl: string }): Promise<void> {
   const { error } = await getClient().rpc("update_company_branding", {
     p_accent_color: input.accentColor,

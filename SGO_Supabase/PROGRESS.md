@@ -515,6 +515,46 @@ Testado contra o projeto real: editei a capacidade da Taina pra 20h, confirmei n
 a fórmula no Dashboard com a única tarefa aberta hoje (1h de estimativa ÷ 40h do Fagner = 3%,
 exatamente o esperado), e devolvi a capacidade da Taina para o padrão de 40h depois.
 
+### Parte 7 — Upload de logo em arquivo via Supabase Storage ✅ (última do backlog)
+
+`0029_branding_logo_storage.sql`: bucket `branding-logos` (leitura pública — o logo precisa
+aparecer pra qualquer pessoa autenticada, não só pra admin; sinalizar URL assinada seria
+desnecessário pra um asset de marca não sensível), limite de 5MB e tipos PNG/JPG/WebP aplicados
+pelo próprio bucket (`file_size_limit`, `allowed_mime_types`), mais políticas de escrita
+(`insert`/`update`/`delete`) restritas a `is_privileged()` **e** ao primeiro segmento da pasta do
+objeto ser o `current_company()` de quem está enviando — cada empresa só escreve na própria pasta.
+
+`uploadLogo(file)` (`lib/branding.ts`): valida tipo/tamanho no cliente (mensagem imediata, sem
+round-trip), envia pra `{company_id}/logo-{timestamp}.{ext}` — o timestamp no nome evita que
+alguém continue vendo o logo antigo por causa de cache do navegador/CDN depois de trocar. A tela
+de Configurações ganhou um campo de arquivo que envia e já preenche/pré-visualiza a URL assim que
+a pessoa escolhe a imagem; o campo de URL manual continua existindo como alternativa.
+
+Testado contra o projeto real com três cenários, não só o caminho feliz: (1) upload como admin —
+sucesso, URL pública responde 200 com o content-type certo; (2) tentativa de escrever na pasta de
+uma OUTRA empresa (usei um UUID inventado) com o mesmo token de admin — recusado com 403 pela RLS;
+(3) criei um colaborador descartável (perfil não-privilegiado), tentei o mesmo upload com o token
+dele — também recusado com 403, e apaguei o colaborador de teste na sequência. Simulei a seleção
+de arquivo pelo navegador de verdade (a automação não abre o seletor nativo do SO, então criei um
+`File` via JS e disparei o evento `change`) e confirmei que a pré-visualização carregou a imagem
+real (`naturalWidth` bateu com o pixel de teste). Não cliquei em Salvar — a marca real da empresa
+(`Grupo Quintão`, verde, sem logo) ficou exatamente como estava; os arquivos de teste no Storage
+foram apagados depois.
+
+---
+
+## Resumo do backlog de 7 partes (checklist do sistema antigo, 2026-08-21)
+
+Todas as 7 partes aprovadas pelo usuário foram entregues, testadas contra o projeto Supabase real
+(nunca só localmente) e publicadas em produção (Vercel + GitHub Pages) uma de cada vez, rodando de
+forma autônoma via `/loop` por cerca de 2 horas: filtros em Tarefas/Kanban, tela de Processos com
+herança na criação de tarefa, tela "Meu trabalho", cronômetro rápido + Timer Dock flutuante,
+toasts + rede de segurança para erros globais, capacidade semanal + ocupação real no Dashboard, e
+upload de logo em arquivo. Ficaram de fora, por decisão do usuário, os itens que dependiam de mais
+contexto operacional: campos de Tags/Cliente em tarefas, chat interno, e os campos cadastrais de
+Colaboradores sem cálculo automático associado (Cargo, Substituto, Processos principais,
+Observações) — ver a análise publicada como Artifact para o motivo de cada um.
+
 ## VISUAL REDESIGN v2 — configurable branding + real charts (2026-08-21)
 
 The first visual pass (dark green sidebar) didn't land — "do jeito que ficou foi muito ruim". The

@@ -1,5 +1,6 @@
-import { applyBranding, getBranding, updateBranding } from "../lib/branding";
+import { applyBranding, getBranding, updateBranding, uploadLogo } from "../lib/branding";
 import { getCachedProfile, renderNav } from "./nav";
+import { toastError, toastSuccess } from "./toast";
 
 const PRIVILEGED_ROLES = new Set(["admin", "diretoria", "auditoria"]);
 
@@ -49,9 +50,11 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
         <label for="display-name">Nome de exibição</label>
         <input id="display-name" type="text" value="${escapeAttr(branding.displayName ?? branding.name)}" />
 
-        <label for="logo-url">URL do logo (opcional)</label>
+        <label for="logo-file">Logo</label>
+        <input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" />
+        <p class="settings-hint">PNG, JPG ou WebP, até 5 MB. Envia e já mostra a pré-visualização assim que você escolher o arquivo.</p>
+        <label for="logo-url">Ou cole a URL de uma imagem já hospedada</label>
         <input id="logo-url" type="text" placeholder="https://..." value="${escapeAttr(branding.logoUrl ?? "")}" />
-        <p class="settings-hint">Cole o endereço de uma imagem já hospedada. Upload de arquivo direto ainda não existe — é o próximo passo natural depois desta tela.</p>
 
         <p id="settings-error" class="error" hidden></p>
         <p id="settings-success" class="new-collab-result" hidden>Salvo! A nova identidade já está valendo para todo mundo.</p>
@@ -79,6 +82,24 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
   const hexPicker = shell.querySelector<HTMLInputElement>("#accent-hex-picker")!;
   const nameInput = shell.querySelector<HTMLInputElement>("#display-name")!;
   const logoInput = shell.querySelector<HTMLInputElement>("#logo-url")!;
+  const logoFileInput = shell.querySelector<HTMLInputElement>("#logo-file")!;
+
+  logoFileInput.addEventListener("change", async () => {
+    const file = logoFileInput.files?.[0];
+    if (!file) return;
+    logoFileInput.disabled = true;
+    try {
+      const url = await uploadLogo(file);
+      logoInput.value = url;
+      updatePreview();
+      toastSuccess("Logo enviado — clique em Salvar para aplicar para todo mundo.");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : String(err));
+      logoFileInput.value = "";
+    } finally {
+      logoFileInput.disabled = false;
+    }
+  });
 
   function currentColor(): string {
     return hexInput.value.trim() || "#1f6b45";
