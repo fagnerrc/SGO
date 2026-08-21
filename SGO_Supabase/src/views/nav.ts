@@ -1,22 +1,31 @@
+import { applyBranding, getBranding, type Branding } from "../lib/branding";
 import { logout } from "../lib/auth";
+import { listMyNotifications, markNotificationRead, type AppNotification } from "../lib/notifications";
 import { getMyProfile } from "../lib/profiles";
 import { clearSession } from "../lib/session";
-import type { Profile } from "../lib/types";
+import { listMyTasks } from "../lib/tasks";
+import type { Profile, Task } from "../lib/types";
+import { initials } from "./badges";
 
-export type PageKey = "dashboard" | "tasks" | "kanban" | "approvals" | "collaborators";
+export type PageKey = "dashboard" | "tasks" | "kanban" | "approvals" | "collaborators" | "settings";
 
 const PRIVILEGED_ROLES = new Set(["admin", "diretoria", "auditoria"]);
 
 // Cached for the lifetime of the tab — every page needs it just to decide
-// whether to show the "Colaboradores" link, and re-fetching it on every
-// single navigation would be wasteful. Cleared on logout by virtue of a
-// fresh page load being required to log back in.
+// whether to show role-gated links, and re-fetching it on every single
+// navigation would be wasteful. Cleared on logout by virtue of a fresh
+// page load being required to log back in.
 let cachedProfile: Profile | null = null;
 
 export async function getCachedProfile(): Promise<Profile> {
   if (!cachedProfile) cachedProfile = await getMyProfile();
   return cachedProfile;
 }
+
+// Search and notifications both want "all my tasks" / "my notifications"
+// without every page paying for a fresh fetch — cached per tab, cleared
+// each time renderNav() runs for a genuinely new page load (see below).
+let searchTasksPromise: Promise<Task[]> | null = null;
 
 const ICONS: Record<PageKey, string> = {
   dashboard:
@@ -29,9 +38,23 @@ const ICONS: Record<PageKey, string> = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
   collaborators:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  settings:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
 };
 
+const BELL_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
+const SEARCH_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+const CHEVRON_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
 export async function renderNav(root: HTMLElement, active: PageKey): Promise<void> {
+  searchTasksPromise = null;
+
+  const branding = await getBranding().catch(() => null);
+  if (branding) applyBranding(branding);
+
   let profile: Profile | null = null;
   try {
     profile = await getCachedProfile();
@@ -61,13 +84,8 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
     links.push({ key: "collaborators", label: "Colaboradores", href: "#/admin/collaborators" });
   }
 
-  const initials = profile
-    ? profile.full_name
-        .split(/\s+/)
-        .slice(0, 2)
-        .map((p) => p[0]?.toUpperCase() ?? "")
-        .join("")
-    : "";
+  const brandName = branding?.displayName || branding?.name || "SGO";
+  const brandInitials = initials(brandName) || "SG";
 
   root.innerHTML = `
     <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Abrir menu">
@@ -76,10 +94,10 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
     <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
-        <span class="sidebar-brand-mark">SGO</span>
+        ${branding?.logoUrl ? `<img src="${escapeHtml(branding.logoUrl)}" alt="" class="sidebar-brand-logo" />` : `<span class="sidebar-brand-mark">${brandInitials}</span>`}
         <div>
-          <h1>SGO</h1>
-          <p>Grupo Quintão</p>
+          <h1>${escapeHtml(brandName)}</h1>
+          <p>SGO</p>
         </div>
       </div>
       <nav class="sidebar-nav">
@@ -93,22 +111,37 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
           )
           .join("")}
       </nav>
-      <div class="sidebar-footer">
-        ${
-          profile
-            ? `
-          <div class="sidebar-user">
-            <span class="avatar">${initials}</span>
-            <div class="sidebar-user-info">
-              <strong>${escapeHtml(profile.full_name)}</strong>
-              <span>${escapeHtml(profile.role)}</span>
-            </div>
-          </div>`
-            : ""
-        }
-        <button id="nav-logout-btn" class="sidebar-logout">Sair</button>
-      </div>
     </aside>
+    <header class="topbar">
+      <div class="topbar-search">
+        ${SEARCH_ICON}
+        <input id="topbar-search-input" type="text" placeholder="Buscar tarefa por título ou código..." autocomplete="off" />
+        <div id="topbar-search-results" class="topbar-search-results" hidden></div>
+      </div>
+      <div class="topbar-actions">
+        <div class="topbar-menu-wrap">
+          <button id="notif-btn" class="topbar-icon-btn" aria-label="Notificações">
+            ${BELL_ICON}
+            <span id="notif-badge" class="topbar-badge" hidden></span>
+          </button>
+          <div id="notif-panel" class="dropdown-panel dropdown-panel-wide" hidden>
+            <div class="dropdown-header">Notificações</div>
+            <div id="notif-list"><p class="dropdown-empty">Carregando...</p></div>
+          </div>
+        </div>
+        <div class="topbar-menu-wrap">
+          <button id="user-btn" class="topbar-user-btn">
+            <span class="avatar">${profile ? initials(profile.full_name) : "?"}</span>
+            ${profile ? `<span class="topbar-user-info"><strong>${escapeHtml(profile.full_name)}</strong><span>${escapeHtml(profile.role)}</span></span>` : ""}
+            ${CHEVRON_ICON}
+          </button>
+          <div id="user-panel" class="dropdown-panel" hidden>
+            ${isPrivileged ? `<a href="#/admin/settings" class="dropdown-item">Configurações</a>` : ""}
+            <button id="nav-logout-btn" class="dropdown-item dropdown-item-danger">Sair</button>
+          </div>
+        </div>
+      </div>
+    </header>
   `;
 
   const sidebar = root.querySelector<HTMLElement>("#sidebar")!;
@@ -128,6 +161,119 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
     await logout();
     location.hash = "#/login";
   });
+
+  setupDropdown(root, "#notif-btn", "#notif-panel", () => loadNotifications(root));
+  setupDropdown(root, "#user-btn", "#user-panel");
+  setupSearch(root);
+}
+
+function setupDropdown(root: HTMLElement, btnSelector: string, panelSelector: string, onOpen?: () => void): void {
+  const btn = root.querySelector<HTMLButtonElement>(btnSelector)!;
+  const panel = root.querySelector<HTMLElement>(panelSelector)!;
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const willOpen = panel.hidden;
+    root.querySelectorAll<HTMLElement>(".dropdown-panel").forEach((p) => (p.hidden = true));
+    panel.hidden = !willOpen;
+    if (willOpen && onOpen) onOpen();
+  });
+  document.addEventListener("click", () => {
+    panel.hidden = true;
+  });
+  panel.addEventListener("click", (event) => event.stopPropagation());
+}
+
+async function loadNotifications(root: HTMLElement): Promise<void> {
+  const listEl = root.querySelector<HTMLElement>("#notif-list")!;
+  let notifications: AppNotification[];
+  try {
+    notifications = await listMyNotifications();
+  } catch {
+    listEl.innerHTML = `<p class="dropdown-empty">Não foi possível carregar as notificações.</p>`;
+    return;
+  }
+  updateBadge(root, notifications);
+  if (notifications.length === 0) {
+    listEl.innerHTML = `<p class="dropdown-empty">Nenhuma notificação por aqui.</p>`;
+    return;
+  }
+  listEl.innerHTML = notifications
+    .map(
+      (n) => `
+    <button class="notif-item${n.read ? "" : " unread"}" data-id="${n.id}" data-task-id="${n.task_id ?? ""}">
+      <span class="notif-item-title">${escapeHtml(n.title)}</span>
+      <span class="notif-item-message">${escapeHtml(n.message)}</span>
+      <span class="notif-item-time">${new Date(n.created_at).toLocaleString("pt-BR")}</span>
+    </button>`,
+    )
+    .join("");
+  listEl.querySelectorAll<HTMLButtonElement>(".notif-item").forEach((el) => {
+    el.addEventListener("click", async () => {
+      const id = el.dataset.id!;
+      const taskId = el.dataset.taskId;
+      el.classList.remove("unread");
+      await markNotificationRead(id).catch(() => {});
+      if (taskId) location.hash = `#/tasks/${taskId}`;
+    });
+  });
+}
+
+function updateBadge(root: HTMLElement, notifications: AppNotification[]): void {
+  const badge = root.querySelector<HTMLElement>("#notif-badge")!;
+  const unread = notifications.filter((n) => !n.read).length;
+  badge.hidden = unread === 0;
+  if (unread > 0) badge.textContent = unread > 9 ? "9+" : String(unread);
+}
+
+function setupSearch(root: HTMLElement): void {
+  const input = root.querySelector<HTMLInputElement>("#topbar-search-input")!;
+  const resultsEl = root.querySelector<HTMLElement>("#topbar-search-results")!;
+  let debounceHandle: ReturnType<typeof setTimeout> | null = null;
+
+  input.addEventListener("input", () => {
+    if (debounceHandle) clearTimeout(debounceHandle);
+    const query = input.value.trim().toLowerCase();
+    if (!query) {
+      resultsEl.hidden = true;
+      return;
+    }
+    debounceHandle = setTimeout(async () => {
+      if (!searchTasksPromise) searchTasksPromise = listMyTasks();
+      const tasks = await searchTasksPromise.catch(() => [] as Task[]);
+      const matches = tasks
+        .filter((t) => t.titulo.toLowerCase().includes(query) || (t.code ?? "").toLowerCase().includes(query))
+        .slice(0, 8);
+      renderSearchResults(resultsEl, matches, query);
+    }, 150);
+  });
+
+  document.addEventListener("click", () => {
+    resultsEl.hidden = true;
+  });
+  resultsEl.addEventListener("click", (event) => event.stopPropagation());
+  input.addEventListener("click", (event) => event.stopPropagation());
+}
+
+function renderSearchResults(resultsEl: HTMLElement, matches: Task[], query: string): void {
+  if (matches.length === 0) {
+    resultsEl.innerHTML = `<p class="dropdown-empty">Nenhuma tarefa encontrada para "${escapeHtml(query)}".</p>`;
+  } else {
+    resultsEl.innerHTML = matches
+      .map(
+        (t) => `
+      <button class="search-result-item" data-task-id="${t.id}">
+        <span class="search-result-code">${t.code ?? ""}</span>
+        <span class="search-result-title">${escapeHtml(t.titulo)}</span>
+      </button>`,
+      )
+      .join("");
+    resultsEl.querySelectorAll<HTMLButtonElement>(".search-result-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        location.hash = `#/tasks/${el.dataset.taskId}`;
+      });
+    });
+  }
+  resultsEl.hidden = false;
 }
 
 function escapeHtml(value: string): string {

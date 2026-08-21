@@ -75,3 +75,59 @@ export async function listRecentActivity(limit = 10): Promise<ActivityEntry[]> {
   if (error) throwSupabaseError(error);
   return data as ActivityEntry[];
 }
+
+export interface WorkloadEntry {
+  profileId: string;
+  name: string;
+  count: number;
+}
+
+// Pure — same "just count the already-RLS-filtered rows" approach as
+// computeDashboardStats(), grouped by responsável instead of by status.
+// Mirrors the reference dashboard's "Top Products" ranked list.
+export function computeWorkload(tasks: Task[], profiles: { id: string; full_name: string }[], limit = 6): WorkloadEntry[] {
+  const nameById = new Map(profiles.map((p) => [p.id, p.full_name]));
+  const counts = new Map<string, number>();
+  for (const task of tasks) {
+    if (TERMINAL_STATUSES.includes(task.status)) continue;
+    counts.set(task.responsavel_id, (counts.get(task.responsavel_id) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([profileId, count]) => ({ profileId, name: nameById.get(profileId) ?? "—", count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
+// Raw completion timestamps for the last N days — bucketed client-side
+// (computeCompletionsByDay) rather than with a SQL group-by, since the
+// dataset per company is small and this avoids a second RPC just for one
+// chart.
+export async function listRecentCompletions(days = 14): Promise<{ at: string }[]> {
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const { data, error } = await getClient()
+    .from("task_history")
+    .select("at")
+    .eq("action", "Tarefa concluída")
+    .gte("at", since);
+  if (error) throwSupabaseError(error);
+  return data as { at: string }[];
+}
+
+export function computeCompletionsByDay(completions: { at: string }[], days = 14): { label: string; count: number }[] {
+  const buckets = new Map<string, number>();
+  const labels: string[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    const key = d.toISOString().slice(0, 10);
+    buckets.set(key, 0);
+    labels.push(key);
+  }
+  for (const c of completions) {
+    const key = c.at.slice(0, 10);
+    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
+  }
+  return labels.map((key) => ({
+    label: new Date(key + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+    count: buckets.get(key) ?? 0,
+  }));
+}

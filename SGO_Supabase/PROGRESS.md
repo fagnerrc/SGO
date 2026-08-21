@@ -361,6 +361,64 @@ error, clears the local session, and redirects to `#/login`, instead of silently
 profile-less shell. Reproduced with the exact stale JWT via a direct RPC call before writing the
 fix, and confirmed fixed the same way afterward.
 
+## VISUAL REDESIGN v2 — configurable branding + real charts (2026-08-21)
+
+The first visual pass (dark green sidebar) didn't land — "do jeito que ficou foi muito ruim". The
+user pointed at a real Figma community dashboard template ("Dabang Sales Dashboard") as the
+target. Couldn't open the Figma link directly (its canvas is WebGL-rendered and the browser tool
+can't composite/screenshot it — confirmed by trying from a fresh tab, not just retrying the same
+one; the community API also 403s automated fetches), so the user pasted a screenshot instead,
+which was analyzed directly: light sidebar with a solid-color pill for the active nav item, a
+topbar with search/notifications/profile, pastel-colored KPI tiles with icon badges, real charts
+(not CSS bars), and a ranked list with colored progress bars.
+
+Rebuilt around that reference, plus two things the user explicitly asked for that didn't exist
+before: a way to change the site's color/name/logo, and more interactivity.
+
+**Configurable brand identity** (`0026_company_branding.sql`): `companies` gains
+`accent_color`/`display_name`/`logo_url` columns (same `alter table ... add column` pattern as
+`login_max_attempts`). There was no `companies` update policy at all before this — nothing could
+write to that table from the client — so this adds `update_company_branding()` (security definer,
+`is_privileged()`-gated) instead of opening a raw RLS update policy, matching how every other
+mutation in this project works. `current_company_branding()` is the read side, deliberately
+declared as a set-returning function (`returns table(...)`) rather than a single composite —
+`current_profile()` elsewhere in this project returns a single row of nulls for "not found" (a
+real Postgres gotcha, see the bug above), and a `returns table` function avoids that class of bug
+by construction, returning a genuinely empty array instead. `src/lib/branding.ts` fetches once per
+tab and applies only `--primary` as a runtime CSS variable; every dependent token
+(`--primary-dark`, `--primary-soft`, `--focus-ring`) is defined in `style.css` via `color-mix()`
+against `--primary`, so one variable change cascades everywhere without any JS color math. New
+`#/admin/settings` screen (`src/views/settings.ts`, admin/diretoria/auditoria only) with a live
+preview, preset swatches plus a custom hex field. Verified end-to-end against the real project:
+changed the accent to purple, confirmed the whole app re-themed instantly, reloaded the page from
+scratch to confirm it was actually persisted in the database (not just client state), then set it
+back to the real Grupo Quintão green.
+
+**Real interactivity**: the `notifications` table has existed since phase 4 but was never surfaced
+in any screen. Added `src/lib/notifications.ts` and wired a real bell into the new topbar (unread
+badge, dropdown list, click marks read and opens the linked task) — RLS already fully supported
+this (`notifications_select`/`notifications_mark_read`, both scoped to `recipient_id`), so no new
+backend was needed. Tested against two real, pre-existing notifications on the admin account (one
+from a task assignment, one from the overdue-notification generator that had already run) rather
+than synthetic data. Also added a topbar task search (client-side filter over the already-fetched
+task list, debounced) — confirmed working by searching "teste" and getting the real task back.
+
+**Real charts** (`npm install chart.js`, registered via `Chart.register(...registerables)`):
+Dashboard's status breakdown is now a doughnut chart instead of CSS bars; added a 14-day
+completion trend line (`listRecentCompletions()`/`computeCompletionsByDay()` in
+`src/lib/dashboard.ts`, bucketing `task_history` rows client-side rather than adding a SQL
+group-by RPC for one chart) and a "carga por colaborador" ranked list
+(`computeWorkload()`) mirroring the reference's ranked-list-with-colored-bar pattern.
+
+KPI cards became pastel tiles (blue/pink/mint/lavender, each with its own icon badge) and the
+sidebar/topbar were rebuilt light-themed with a solid-pill active state, matching the reference
+more closely than the previous dark sidebar. Every other screen (Tarefas, Kanban, Aprovações,
+Colaboradores, detalhe/criação de tarefa) picked up the new tokens automatically through shared
+CSS classes — no view logic changed. Verified all of it against the real project logged in as the
+real admin: dashboard KPI values, chart canvases actually rendering (non-zero dimensions), Kanban
+still showing all 7 columns, Colaboradores still showing exactly the 2 real people (no seeded
+test data left over from earlier rounds).
+
 ## Done — Phase 1: schema + RLS
 
 All in `supabase/migrations/`:
