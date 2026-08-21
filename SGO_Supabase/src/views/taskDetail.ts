@@ -1,5 +1,7 @@
 import { cancelTask, completeTask, getChecklist, getTask, pauseTask, resumeTask, startTask, toggleChecklistItem } from "../lib/tasks";
 import type { Task } from "../lib/types";
+import { priorityBadge, riskBadge, statusBadge } from "./badges";
+import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
 
 function formatDuration(ms: number): string {
@@ -32,7 +34,7 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
       </header>
       <div class="task-detail">
         <h2>${escapeHtml(task.titulo)}</h2>
-        <p class="task-detail-status">Status: <strong>${task.status}</strong></p>
+        <p class="task-detail-status">${statusBadge(task.status)} ${priorityBadge(task.prioridade)} ${riskBadge(task.risco)}</p>
         <p>${escapeHtml(task.descricao)}</p>
 
         ${
@@ -110,10 +112,14 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
     const justificativa = (root.querySelector("#justificativa") as HTMLTextAreaElement).value.trim();
     completeTask(taskId, evidencia, justificativa).then(reload).catch(showError);
   });
-  root.querySelector("#cancel-btn")?.addEventListener("click", () => {
-    const motivo = prompt("Motivo do cancelamento:");
-    if (!motivo) return;
-    cancelTask(taskId, motivo).then(reload).catch(showError);
+  root.querySelector("#cancel-btn")?.addEventListener("click", async () => {
+    const values = await openFormModal({
+      title: "Cancelar tarefa",
+      fields: [{ name: "motivo", label: "Motivo do cancelamento", type: "textarea", required: true }],
+      confirmLabel: "Cancelar tarefa",
+    });
+    if (!values) return;
+    cancelTask(taskId, values.motivo).then(reload).catch(showError);
   });
 
   root.querySelectorAll<HTMLInputElement>("#checklist-list input[type=checkbox]").forEach((checkbox) => {

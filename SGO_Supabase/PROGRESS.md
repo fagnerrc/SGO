@@ -277,6 +277,74 @@ tasks, 1 process) was fully deleted afterward via a scoped cleanup script (delet
 `company_id` in FK order, then profiles, then the company, then each `auth.users` row via the
 Admin API) — nothing from this test run remains in the live project.
 
+## VISUAL REDESIGN + KANBAN DRAG-AND-DROP (2026-08-21)
+
+The first four screens worked but looked like a test harness (system font, flat gray cards, no
+brand identity) — expected at that stage, but not something to hand to real users. Redesigned the
+whole app to match the maturity of the old Apps Script system, using two references: the old
+`Index.html`'s design system (sidebar, KPI cards, badges, modals) read directly from source, and
+the **live** old system (`script.google.com/.../exec`, real admin login) for real branding —
+which turned out to be **green** (leaf logo, green gradient login, green sidebar), not the
+purple/indigo that dominates the old system's internal CSS tokens. Getting into the live system
+needed the user to type the login themselves in the shared browser pane: the login form runs
+inside a Google Apps Script sandboxed iframe three layers deep
+(`script.google.com` → Google sandbox → `userHtmlFrame`, loaded via `postMessage`), and this
+session's browser-automation tool can dispatch clicks into it but not synthetic keystrokes —
+confirmed by checking `document.querySelectorAll('iframe')` at each layer rather than assuming.
+
+Changes:
+- `src/style.css`: full new token set (green brand palette, badge/status colors, shadows,
+  radii), Inter font (Google Fonts link in `index.html`).
+- `src/views/nav.ts`: rewritten from a top bar to a fixed sidebar (brand, links with icons, user
+  + logout footer), collapsible off-canvas below 860px. Same function signature, so every
+  existing screen kept working unchanged.
+- `src/views/badges.ts` (new): `statusBadge()`/`priorityBadge()`/`riskBadge()`, ported from the
+  old system's equivalent functions, now shared by `taskList`, `taskDetail`, `kanban`,
+  `approvals` instead of each screen inventing its own status text.
+- `src/views/modal.ts` (new): a small dependency-free modal (`openFormModal()`) for the handful
+  of actions that need to collect a field before calling a mutating RPC — replaces the native
+  `prompt()` used for cancel/reject motivo, now also used by the Kanban's drag targets.
+- `src/views/kanban.ts`: real drag-and-drop (native HTML5 `dragstart`/`dragover`/`drop`, same
+  pattern as the old system, no new dependency), plus a `<select>` "Mover para..." fallback on
+  every card for accessibility/mobile. Cards now show priority badge, progress bar, responsible
+  person's initials, and deadline (highlighted red if overdue).
+
+**The hard part wasn't styling — it was that every column-to-column drag has to correspond to a
+real, allowed database transition.** Since the migration to Supabase, `enforce_task_transition()`
+(0003_tasks.sql) only allows a status change through its one dedicated function — there is no
+generic "set status to X". Read that trigger directly (not assumed) and built an explicit
+per-status transition table in `kanban.ts` (`transitionsFor(task)`) so a card only offers/accepts
+drops that are actually legal; anything requiring extra input (motivo, evidência, quem está sendo
+aguardado) opens the new modal first.
+
+That reading surfaced **two real backend gaps**, both fixed:
+1. `wait_task()` (→ "Aguardando terceiro") existed in the database since the original migration
+   but was never wrapped in `lib/tasks.ts` — the frontend had no way to reach that status at all
+   until now.
+2. **`'Auditada'` was structurally unreachable.** The status has existed in the enum and in the
+   trigger's gated-status list since day one (requiring `action = 'audit'`), but no function ever
+   set that action — confirmed by grepping every migration for `create function` and finding
+   nothing. Worse, even a correctly-written `audit_task()` would still have failed: the same
+   trigger treats `'Concluída'` as terminal and blocks any further change unless
+   `action = 'reopen'`, and auditing only makes sense on an already-completed task. Fixed both
+   parts in `0025_audit_task.sql`: the trigger gets one narrow additional exception
+   (`'Concluída' → 'Auditada'` via `action = 'audit'`, nothing else about terminal-state
+   protection changes), and the new `audit_task()` function is restricted to
+   `auditoria`/`diretoria`/`admin` and requires the task to currently be `'Concluída'`.
+
+Verified against the real project, not just read: an 8-assertion Node script confirmed a
+colaborador can't audit an in-progress or completed task, an auditor can't audit a task that
+isn't `'Concluída'` yet, an auditor *can* audit a completed one, and `'Auditada'` is still
+terminal afterward (can't cancel it). Then re-seeded a small realistic dataset under the real
+`Grupo Quintão` company and drove every screen through a real browser logged in as the real
+admin: Dashboard, Kanban (including an actual native drag via dispatched `DragEvent`s, since the
+click-drag automation action doesn't fire real HTML5 DnD events — same class of tool limitation
+as earlier sessions, confirmed by dispatching real events instead of assuming), Aprovações, and
+Colaboradores all render correctly with the new design. All seeded test profiles/tasks were
+deleted afterward; the real `fagner@gmail.com` admin account, `taina@gmail.com` (a real
+collaborator the user had already added independently), and a real "Teste" task the user created
+themselves while trying out the site were all left untouched.
+
 ## Done — Phase 1: schema + RLS
 
 All in `supabase/migrations/`:

@@ -1,16 +1,7 @@
 import { listMyTasks } from "../lib/tasks";
 import type { Task } from "../lib/types";
+import { priorityBadge, statusBadge } from "./badges";
 import { renderNav } from "./nav";
-
-const STATUS_LABELS: Record<string, string> = {
-  "Em andamento": "Em andamento",
-  "Aguardando terceiro": "Aguardando terceiro",
-  "Aguardando aprovação": "Aguardando aprovação",
-  "Reprovada/devolvida": "Reprovada / devolvida",
-  Concluída: "Concluída",
-  Auditada: "Auditada",
-  Cancelada: "Cancelada",
-};
 
 function formatPrazo(prazo: string | null): string {
   if (!prazo) return "sem prazo";
@@ -57,22 +48,14 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
     const card = document.createElement("button");
     card.className = "task-card";
     card.innerHTML = `
-      <span class="task-card-code">${task.code ?? ""}</span>
+      <span class="task-card-code">${task.code ?? ""} ${priorityBadge(task.prioridade)}</span>
       <span class="task-card-title">${escapeHtml(task.titulo)}</span>
-      <span class="task-card-status status-${slug(task.status)}">${STATUS_LABELS[task.status] ?? task.status}</span>
+      <span class="task-card-status">${statusBadge(task.status)}</span>
       <span class="task-card-deadline">${formatPrazo(task.prazo)}</span>
     `;
     card.addEventListener("click", () => onOpenTask(task.id));
     listEl.appendChild(card);
   }
-}
-
-function slug(status: string): string {
-  return status
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z]+/g, "-");
 }
 
 function escapeHtml(value: string): string {

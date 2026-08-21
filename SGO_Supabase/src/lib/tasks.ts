@@ -58,6 +58,18 @@ export const completeTask = (taskId: string, evidencia: string, justificativaAtr
     p_justificativa_atraso: justificativaAtraso,
   });
 
+export const waitTask = (taskId: string, aguardandoQuem: string, motivoEspera = "") =>
+  callAction("wait_task", {
+    p_task_id: taskId,
+    p_operation_id: newOperationId(),
+    p_aguardando_quem: aguardandoQuem,
+    p_motivo_espera: motivoEspera,
+  });
+
+export const auditTask = (taskId: string) => callAction("audit_task", { p_task_id: taskId, p_operation_id: newOperationId() });
+
+export const approvalWaitTask = (taskId: string) => callAction("approval_wait_task", { p_task_id: taskId, p_operation_id: newOperationId() });
+
 export const cancelTask = (taskId: string, motivo: string) =>
   callAction("cancel_task", { p_task_id: taskId, p_operation_id: newOperationId(), p_motivo: motivo });
 

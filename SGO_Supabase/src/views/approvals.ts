@@ -1,5 +1,6 @@
 import { approveTask, listPendingApprovals, rejectTask } from "../lib/tasks";
 import type { Task } from "../lib/types";
+import { priorityBadge } from "./badges";
 import { renderNav } from "./nav";
 
 export async function renderApprovals(root: HTMLElement): Promise<void> {
@@ -30,7 +31,7 @@ async function renderList(shell: HTMLDivElement): Promise<void> {
             (t) => `
         <div class="approval-card" data-task-id="${t.id}">
           <div>
-            <span class="task-card-code">${t.code ?? ""}</span>
+            <span class="task-card-code">${t.code ?? ""} ${priorityBadge(t.prioridade)}</span>
             <span class="task-card-title">${escapeHtml(t.titulo)}</span>
             <span class="approval-waiting-since">aguardando desde ${t.updated_at ? new Date(t.updated_at).toLocaleDateString("pt-BR") : "—"}</span>
           </div>
