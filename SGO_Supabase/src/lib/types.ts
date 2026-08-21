@@ -58,4 +58,5 @@ export interface Profile {
   role: string;
   area: string;
   active: boolean;
+  capacidade_semanal: number;
 }

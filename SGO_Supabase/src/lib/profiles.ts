@@ -4,7 +4,7 @@ import type { Profile } from "./types";
 export async function listCompanyProfiles(): Promise<Profile[]> {
   const { data, error } = await getClient()
     .from("profiles")
-    .select("id, full_name, email, role, area, active")
+    .select("id, full_name, email, role, area, active, capacidade_semanal")
     .eq("active", true)
     .order("full_name", { ascending: true });
   if (error) throwSupabaseError(error);
@@ -18,7 +18,7 @@ export async function listCompanyProfiles(): Promise<Profile[]> {
 export async function adminListProfiles(): Promise<Profile[]> {
   const { data, error } = await getClient()
     .from("profiles")
-    .select("id, full_name, email, role, area, active")
+    .select("id, full_name, email, role, area, active, capacidade_semanal")
     .order("full_name", { ascending: true });
   if (error) throwSupabaseError(error);
   return data as Profile[];
@@ -72,3 +72,6 @@ export const setProfileActive = (profileId: string, active: boolean) =>
 
 export const setProfileRole = (profileId: string, role: string) =>
   callProfileAction("set_profile_role", { p_profile_id: profileId, p_role: role });
+
+export const setProfileCapacity = (profileId: string, capacidadeSemanal: number) =>
+  callProfileAction("set_profile_capacity", { p_profile_id: profileId, p_capacidade_semanal: capacidadeSemanal });

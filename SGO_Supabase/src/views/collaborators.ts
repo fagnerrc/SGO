@@ -1,4 +1,4 @@
-import { adminListProfiles, createCollaborator, setProfileActive, setProfileRole } from "../lib/profiles";
+import { adminListProfiles, createCollaborator, setProfileActive, setProfileCapacity, setProfileRole } from "../lib/profiles";
 import type { Profile } from "../lib/types";
 import { renderNav } from "./nav";
 import { toastError, toastSuccess } from "./toast";
@@ -59,7 +59,7 @@ async function renderPage(shell: HTMLDivElement): Promise<void> {
     <div class="card table-card">
       <table class="data-table">
         <thead>
-          <tr><th>Nome</th><th>E-mail</th><th>Área</th><th>Perfil</th><th>Status</th><th></th></tr>
+          <tr><th>Nome</th><th>E-mail</th><th>Área</th><th>Perfil</th><th>Capacidade (h/semana)</th><th>Status</th><th></th></tr>
         </thead>
         <tbody id="collab-rows"></tbody>
       </table>
@@ -124,6 +124,7 @@ async function refreshRows(shell: HTMLDivElement): Promise<void> {
             .join("")}
         </select>
       </td>
+      <td><input type="number" class="capacity-input" data-profile-id="${p.id}" min="1" step="0.5" value="${p.capacidade_semanal}" style="width:70px" /></td>
       <td>${p.active ? "Ativo" : "Inativo"}</td>
       <td><button class="link-button toggle-active-btn" data-profile-id="${p.id}" data-active="${p.active}">${p.active ? "Desativar" : "Reativar"}</button></td>
     </tr>`,
@@ -135,6 +136,24 @@ async function refreshRows(shell: HTMLDivElement): Promise<void> {
       try {
         await setProfileRole(select.dataset.profileId!, select.value);
         toastSuccess("Perfil atualizado.");
+      } catch (err) {
+        toastError((err as Error).message);
+        await refreshRows(shell);
+      }
+    });
+  });
+
+  rowsEl.querySelectorAll<HTMLInputElement>(".capacity-input").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const value = Number(input.value);
+      if (!value || value <= 0) {
+        toastError("Capacidade precisa ser maior que zero.");
+        await refreshRows(shell);
+        return;
+      }
+      try {
+        await setProfileCapacity(input.dataset.profileId!, value);
+        toastSuccess("Capacidade atualizada.");
       } catch (err) {
         toastError((err as Error).message);
         await refreshRows(shell);

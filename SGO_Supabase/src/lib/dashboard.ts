@@ -80,21 +80,45 @@ export interface WorkloadEntry {
   profileId: string;
   name: string;
   count: number;
+  hoursAssigned: number;
+  capacity: number;
+  occupancyPercent: number;
 }
 
-// Pure — same "just count the already-RLS-filtered rows" approach as
+// Pure — same "just work over the already-RLS-filtered rows" approach as
 // computeDashboardStats(), grouped by responsável instead of by status.
-// Mirrors the reference dashboard's "Top Products" ranked list.
-export function computeWorkload(tasks: Task[], profiles: { id: string; full_name: string }[], limit = 6): WorkloadEntry[] {
-  const nameById = new Map(profiles.map((p) => [p.id, p.full_name]));
+// occupancyPercent mirrors the old system's formula exactly: sum of the
+// estimativa of open (non-terminal) tasks assigned to the person, divided
+// by their capacidade_semanal — a real overload signal instead of a
+// plain task count, which treats a 1-hour task the same as a 20-hour one.
+export function computeWorkload(
+  tasks: Task[],
+  profiles: { id: string; full_name: string; capacidade_semanal: number }[],
+  limit = 6,
+): WorkloadEntry[] {
+  const profileById = new Map(profiles.map((p) => [p.id, p]));
   const counts = new Map<string, number>();
+  const hours = new Map<string, number>();
   for (const task of tasks) {
     if (TERMINAL_STATUSES.includes(task.status)) continue;
     counts.set(task.responsavel_id, (counts.get(task.responsavel_id) ?? 0) + 1);
+    hours.set(task.responsavel_id, (hours.get(task.responsavel_id) ?? 0) + (task.estimativa || 0));
   }
   return Array.from(counts.entries())
-    .map(([profileId, count]) => ({ profileId, name: nameById.get(profileId) ?? "—", count }))
-    .sort((a, b) => b.count - a.count)
+    .map(([profileId, count]) => {
+      const profile = profileById.get(profileId);
+      const capacity = profile?.capacidade_semanal || 40;
+      const hoursAssigned = hours.get(profileId) ?? 0;
+      return {
+        profileId,
+        name: profile?.full_name ?? "—",
+        count,
+        hoursAssigned,
+        capacity,
+        occupancyPercent: Math.round((hoursAssigned / capacity) * 100),
+      };
+    })
+    .sort((a, b) => b.occupancyPercent - a.occupancyPercent)
     .slice(0, limit);
 }
 

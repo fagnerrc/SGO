@@ -107,16 +107,17 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
       </div>
       <div class="card">
         <h3>Carga por colaborador</h3>
+        <p class="dashboard-subtitle" style="margin-bottom:0.75rem">Estimativa das tarefas abertas ÷ capacidade semanal cadastrada.</p>
         <div class="workload-list">
           ${
             workload
               .map(
-                (w, i) => `
+                (w) => `
             <div class="workload-row">
-              <span class="workload-avatar">${initials(w.name)}</span>
+              <span class="workload-avatar" title="${escapeHtml(w.name)}">${initials(w.name)}</span>
               <span class="workload-name">${escapeHtml(w.name)}</span>
-              <div class="workload-bar-track"><div class="workload-bar-fill" style="width:${(w.count / (workload[0]?.count || 1)) * 100}%;background:${workloadColor(i)}"></div></div>
-              <span class="workload-count">${w.count}</span>
+              <div class="workload-bar-track"><div class="workload-bar-fill" style="width:${Math.min(w.occupancyPercent, 100)}%;background:${occupancyColor(w.occupancyPercent)}"></div></div>
+              <span class="workload-count" style="color:${occupancyColor(w.occupancyPercent)}">${w.occupancyPercent}%</span>
             </div>`,
               )
               .join("") || "<p>Nenhuma tarefa em aberto ainda.</p>"
@@ -175,9 +176,10 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
   });
 }
 
-function workloadColor(i: number): string {
-  const colors = ["#2f6fa0", "#2fa968", "#7c6fd9", "#e0954b", "#d6527d", "#8892a6"];
-  return colors[i % colors.length];
+function occupancyColor(percent: number): string {
+  if (percent > 100) return "#c0522e";
+  if (percent >= 80) return "#b3721f";
+  return "#1f6b45";
 }
 
 function iconClipboard(): string {

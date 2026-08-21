@@ -498,6 +498,23 @@ login de novo pra continuar testando. Nenhum dado foi perdido; documentando aqui
 exatamente o tipo de engano que vale registrar. Testes seguintes usaram um colaborador descartável
 criado só para isso, apagado no final.
 
+### Parte 6 — Capacidade semanal + ocupação real no Dashboard ✅
+
+`0028_collaborator_capacity.sql`: `profiles.capacidade_semanal numeric not null default 40` +
+`set_profile_capacity()` (`is_privileged()`-gated, mesmo padrão de `set_profile_role`/
+`set_profile_active`). Campo editável direto na tabela de Colaboradores (input numérico por
+linha, igual ao select de perfil já existente).
+
+`computeWorkload()` (`lib/dashboard.ts`) mudou de "contar tarefas abertas" para o cálculo real que
+o sistema antigo usava: soma da `estimativa` das tarefas abertas de cada pessoa ÷ sua
+`capacidade_semanal` — ocupação de verdade, não só quantidade. A cor da barra agora é semântica em
+vez de decorativa (verde até 80%, laranja de 80–100%, vermelho acima de 100% — sobrecarga real),
+substituindo o ciclo de cores arco-íris usado antes.
+
+Testado contra o projeto real: editei a capacidade da Taina pra 20h, confirmei no banco, verifiquei
+a fórmula no Dashboard com a única tarefa aberta hoje (1h de estimativa ÷ 40h do Fagner = 3%,
+exatamente o esperado), e devolvi a capacidade da Taina para o padrão de 40h depois.
+
 ## VISUAL REDESIGN v2 — configurable branding + real charts (2026-08-21)
 
 The first visual pass (dark green sidebar) didn't land — "do jeito que ficou foi muito ruim". The
