@@ -1,6 +1,7 @@
 # Segredos e credenciais - NUNCA versionar
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 *.crt
