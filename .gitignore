@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.local.example
 *.pem
 *.key
 *.crt
@@ -12,6 +13,8 @@ config.local.*
 # Ferramentas locais
 .claude/
 node_modules/
+dist/
+*.tsbuildinfo
 __pycache__/
 *.pyc
 .venv/
