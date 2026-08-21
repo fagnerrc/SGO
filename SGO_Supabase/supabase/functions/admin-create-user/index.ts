@@ -12,23 +12,20 @@
 // SUPABASE_SERVICE_ROLE_KEY.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { handleCorsPreflight, json } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
 
 function generateTemporaryPin(): string {
   return String(Math.floor(1000 + Math.random() * 9000)); // 4-digit temp PIN, must be changed on first login by the app's own UX
 }
 
 Deno.serve(async (req: Request) => {
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
+
   if (req.method !== "POST") {
     return json({ success: false, errorCode: "METHOD_NOT_ALLOWED" }, 405);
   }
