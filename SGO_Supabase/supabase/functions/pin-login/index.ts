@@ -12,16 +12,22 @@
 //      after an admin resets this user's PIN — rather than only once the
 //      token would naturally expire.
 //
-// Required environment variables (set via `supabase secrets set`, never
-// committed): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
-// (find the JWT secret in the Supabase dashboard under Project Settings ->
-// API — it's what PostgREST verifies incoming tokens against).
+// Required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+// are injected automatically into every Edge Function by Supabase — no
+// setup needed. JWT_SECRET is NOT auto-injected and must be set manually
+// (`supabase secrets set JWT_SECRET=...`, never committed) — note it can't
+// be named SUPABASE_JWT_SECRET, since Supabase reserves the SUPABASE_
+// prefix for its own auto-injected vars and silently refuses to set a
+// custom secret with that prefix. Find the value in the Supabase
+// dashboard under Project Settings -> API (or via the Management API's
+// GET /v1/projects/{ref}/postgrest endpoint) — it's what PostgREST
+// verifies incoming tokens against.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const JWT_SECRET = Deno.env.get("SUPABASE_JWT_SECRET")!;
+const JWT_SECRET = Deno.env.get("JWT_SECRET")!;
 
 function base64url(bytes: Uint8Array): string {
   let binary = "";

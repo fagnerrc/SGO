@@ -24,12 +24,20 @@
 
 alter table notifications add column source_id uuid;
 
-drop index notifications_dedup_idx;
-alter table notifications drop column dedup_key;
-alter table notifications add column dedup_key text generated always as (
-  type::text || ':' || coalesce(source_id::text, task_id::text, '') || ':' || recipient_id::text || ':' || to_char(created_at, 'YYYY-MM-DD')
-) stored;
-create unique index notifications_dedup_idx on notifications (dedup_key);
+-- dedup_key (0004) is a plain column set by a BEFORE INSERT trigger, not a
+-- generated column (see 0004's comment on why: to_char() on a timestamp
+-- isn't IMMUTABLE, which a generated column's expression is required to
+-- be). That means picking up source_id here only requires replacing the
+-- trigger function's body — no column drop/recreate, no index rebuild.
+create or replace function set_notification_dedup_key()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.dedup_key := new.type::text || ':' || coalesce(new.source_id::text, new.task_id::text, '') || ':' || new.recipient_id::text || ':' || to_char(new.created_at, 'YYYY-MM-DD');
+  return new;
+end;
+$$;
 
 -- One conversation per task, one per (company, area) — get_or_create
 -- functions below rely on these to be race-safe.

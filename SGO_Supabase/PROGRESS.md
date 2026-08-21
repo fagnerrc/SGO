@@ -2,6 +2,76 @@
 
 Following the phases in `../SGO_Supabase_Migration_Prompt.md` section 8.
 
+## LIVE VALIDATION — actually run against a real Supabase project (2026-08-21)
+
+Every phase below says "done" based on code review and (from the validation-pass entry)
+SQL-parser/grant-signature checks. None of that is the same as running it. On 2026-08-21 this
+project was linked to a real Supabase project (`SGO`, ref `nrguwyhkocsdszdrvmry`, region
+sa-east-1) via `supabase link` + a personal access token, and every migration was actually
+applied with `supabase db push`. This found **6 real bugs** that no amount of reading the SQL
+would have caught, fixed with forward migrations `0014`-`0022` (0004/0006/0009 were also edited
+directly, since their bugs were caught before those specific files had successfully applied —
+see each bug below for which case it was):
+
+1. **`notifications.dedup_key` as a `GENERATED ALWAYS AS (...) STORED` column failed outright**
+   (`0004`/`0009`, edited directly — hadn't applied yet): `to_char(timestamptz, ...)` is only
+   `STABLE`, not `IMMUTABLE`, and Postgres requires a generated column's expression to be
+   immutable. Fixed by making `dedup_key` a plain column set by a `BEFORE INSERT` trigger
+   instead — no such restriction applies there.
+2. **`id = ANY ((select company_access from profiles ...))` failed** (`0006`, edited directly):
+   `x = ANY (subquery)` expects the subquery to yield multiple scalar rows, not one row
+   containing an array — Postgres tried to compare `uuid = uuid[]` directly. Fixed with
+   `unnest()`.
+3. **pgcrypto's `crypt()`/`gen_salt()` were unreachable** from `set_pin()`/`verify_login()`/
+   `bootstrap_set_initial_pin()` (`0008`/`0012`, already applied — fixed forward in `0014`):
+   this project installs pgcrypto into an `extensions` schema, not `public`, and none of the
+   three functions had `extensions` on their `search_path`. The functions *created*
+   successfully (plpgsql bodies aren't validated at creation time) but would have failed on the
+   very first real login or PIN-set attempt.
+4. **Every function was missing an explicit `search_path`** (`0015`) — a real
+   `db advisors` security finding (`function_search_path_mutable`), not a hypothetical.
+5. **Internal-only functions were reachable via PostgREST RPC despite "never granted" comments
+   throughout 0007/0009/0010** (`0013` partially, completed in `0016`/`0019`/`0020`/`0022`) —
+   the actual root cause took three attempts to nail down correctly, which is itself worth
+   recording: Postgres grants `EXECUTE` to `PUBLIC` on every new function by default, **and**
+   Supabase separately auto-grants `EXECUTE` to `anon`/`authenticated`/`service_role` on every
+   new function in `public` — two independent grants, and revoking only one leaves the function
+   fully callable via the other. `claim_operation`/`complete_operation`/`fail_operation` (would
+   have let any client forge or sabotage another user's idempotency record),
+   `generate_daily_tasks`/`generate_deadline_notifications` (triggerable on demand instead of
+   pg_cron-only), and — the one missed by every earlier manual review pass —
+   **`revoke_sessions_for`**, which would have let any client, including `anon`, revoke *any*
+   user's sessions by profile id. Verified with direct ACL inspection
+   (`select proacl from pg_proc`), not just re-running the advisor, after getting it wrong twice.
+6. **14 RLS policies re-evaluated `auth.uid()` per row instead of once per query** (`0017` for
+   2, `0021` for the other 12) — a real `db advisors` performance finding
+   (`auth_rls_initplan`), fixed by wrapping as `(select auth.uid())` per Supabase's documented
+   pattern.
+
+**End-to-end auth flow was then verified for real**, not just unit-by-unit: deployed all three
+Edge Functions (`supabase functions deploy`), set the `JWT_SECRET` secret (note: **cannot be
+named `SUPABASE_JWT_SECRET`** — Supabase reserves that prefix and silently refuses to set it;
+had to fetch the actual secret value via the Management API's `GET /v1/projects/{ref}/postgrest`
+endpoint, since neither the CLI nor the dashboard UI surfaced it in an easy-to-find place for
+this project), called `bootstrap-company` to create a real company + admin, called `pin-login`
+with that admin's PIN and got back a real signed JWT, used that JWT to call `current_profile()`
+via PostgREST directly and got the correct profile back (RLS + `session_is_valid()` both
+working), then called `logout()` and confirmed the *same* token immediately stopped working —
+the phase 3 bug #1 fix (live session revocation) is confirmed working against a real database,
+not just reasoned about. Test company/admin were deleted afterward; the project is back to a
+clean, unbootstrapped state.
+
+**Also confirmed for real:** both `pg_cron` jobs (`sgo-generate-daily-tasks`,
+`sgo-deadline-notifications`) actually appear in `cron.job` and are active — this closes open
+question #7 below, which had flagged pg_cron behavior on Supabase's managed Postgres as
+unverified.
+
+**Still not verified even after all this:** the actual task-mutation flow (`create_task` through
+`complete_task`), chat, notifications firing, and the daily-generation/deadline-notification
+functions' *content* (only that they're scheduled, not that a real run produces correct
+output) — this session tested auth end-to-end because that's the foundation everything else
+sits on, not because the rest is assumed fine. Test those before relying on them.
+
 ## Done — Phase 1: schema + RLS
 
 All in `supabase/migrations/`:
@@ -290,20 +360,12 @@ still not reachable — but two things were validated for real, not just read by
 
 ## Open questions / things to verify before relying on this schema
 
-1. **Still not run against a real Postgres/Supabase instance — still the #1 item**, though this
-   is now more precisely scoped than "written by eye": all 13 migrations pass real Postgres SQL
-   parsing and a full grant/signature cross-check (see the validation pass section above), so
-   what's actually unverified is semantic/runtime behavior — PL/pgSQL function bodies, RLS policy
-   *behavior* (not just that the policies parse), and every Edge Function's actual HTTP behavior.
-   Before trusting any of this, run the migrations against a throwaway project and fix whatever
-   the first `db push` surfaces. Likely candidates: exact array/`ANY` syntax in `0006`'s
-   `company_access` checks; whether `pg_cron` is available on your Supabase plan (needs enabling
-   in the dashboard first); in `0007`'s `update_task()`, the
-   `jsonb_array_elements_text(...)::uuid`/`::text` casts used to turn a JSON array into
-   `participantes uuid[]`/`tags text[]`; and in `0008`, whether creating a trigger on `auth.users`
-   is permitted under your project's role setup (it's the standard documented Supabase pattern,
-   but depends on the migration being run as a role with the right privileges on the `auth`
-   schema — usually true for the `postgres` role `supabase db push` uses by default).
+1. **RESOLVED 2026-08-21 — see "LIVE VALIDATION" section at the top of this file.** All 22
+   migrations now apply cleanly to a real Supabase project, and the full auth flow (bootstrap →
+   login → RLS-protected query → logout → session actually revoked) was verified end-to-end.
+   What's genuinely still unverified: task-mutation/chat/notification *content correctness*, and
+   whether `jsonb_array_elements_text(...)::uuid`/`::text` in `0007`'s `update_task()` behaves as
+   expected against a real call (never exercised).
 2. **First-user bootstrap: closed in phase 7** (`can_bootstrap()`/`bootstrap_company()`/
    `bootstrap_set_initial_pin()` in `0012`, called from `supabase/functions/bootstrap-company/`).
    Left here as a record that it was a real gap and how it got closed, not as an open item.
@@ -317,10 +379,10 @@ still not reachable — but two things were validated for real, not just read by
    call, not something confirmed against how the old system actually behaved (it didn't have a
    working notification path for any chat type — bug #6). Revisit if the product wants area chat
    to notify.
-5. **Migration 0009 (comms/notifications) is untested like everything else** — same caveat as
-   item 1, plus it specifically drops and recreates `notifications.dedup_key`/its unique index,
-   so if 0004-0008 were ever actually applied to a real database before 0009 runs, double-check
-   that ALTER sequence against whatever notification rows already exist.
+5. **RESOLVED 2026-08-21** — 0009 applies cleanly (its `dedup_key` handling was rewritten from a
+   generated column to a trigger during live validation; see item 1 above). Not yet verified:
+   that notifications actually get created with correct content when a real task/feedback/
+   message is inserted — only that the schema/trigger *definitions* apply without error.
 6. **No per-company timezone yet.** `0010`'s daily generation and deadline math both run on UTC
    wall-clock time (`task_templates.deadline_time` is interpreted as UTC, `generate_daily_tasks`
    fires at `5 0 * * *` UTC). Fine for a single-timezone company, wrong the moment SGO serves a
@@ -328,11 +390,11 @@ still not reachable — but two things were validated for real, not just read by
    right fix, not implemented yet. `generate_deadline_notifications()` itself doesn't have this
    problem (it compares real timestamps, not wall-clock dates), only the daily generation time
    and the templates' `deadline_time` do.
-7. **`pg_cron` scheduling in `0010` is the least-tested part of the whole project so far** — it
-   depends on the extension being enabled (dashboard toggle) *and* on `cron.schedule()`'s exact
-   behavior on Supabase's managed Postgres, which can differ subtly from self-hosted pg_cron.
-   Verify both jobs actually appear in `cron.job` and produce rows in `cron.job_run_details`
-   after applying this migration, before trusting that automation is really running.
+7. **RESOLVED 2026-08-21** — confirmed via `select * from cron.job` against the live project:
+   both `sgo-generate-daily-tasks` and `sgo-deadline-notifications` are registered and active.
+   Not yet verified: that a real scheduled run actually produces correct rows (only that the job
+   itself is correctly scheduled) — check `cron.job_run_details` after the next natural firing,
+   or call the underlying functions manually with seed data.
 8. **`risco`/`prioridade` are plain text, not enums** — the old source didn't give enough
    confirmed values to enumerate safely; tighten with a `CHECK (... IN (...))` once the real
    value set is confirmed against the old data.

@@ -77,13 +77,34 @@ create table notifications (
   -- Fixes bug #2 in section 6 of the migration plan (dedup key omitted the
   -- recipient, so reassigning a task mid-day silently dropped the new
   -- recipient's notification). The recipient is now part of the identity.
-  dedup_key text generated always as (
-    type::text || ':' || coalesce(task_id::text, '') || ':' || recipient_id::text || ':' || to_char(created_at, 'YYYY-MM-DD')
-  ) stored
+  -- Computed by a trigger (below), not a generated column: Postgres
+  -- requires a generated column's expression to be IMMUTABLE, and
+  -- to_char(timestamptz, ...) is only STABLE (its output can depend on
+  -- session locale/DateStyle settings) — CREATE TABLE with this as
+  -- `generated always as (...) stored` fails outright with "generation
+  -- expression is not immutable". A BEFORE INSERT trigger has no such
+  -- restriction, since it isn't required to be a pure/deterministic
+  -- expression.
+  dedup_key text not null
 );
 
 create index notifications_recipient_idx on notifications (recipient_id, read);
 create index notifications_task_idx on notifications (task_id);
+
+create function set_notification_dedup_key()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.dedup_key := new.type::text || ':' || coalesce(new.task_id::text, '') || ':' || new.recipient_id::text || ':' || to_char(new.created_at, 'YYYY-MM-DD');
+  return new;
+end;
+$$;
+
+create trigger notifications_set_dedup_key
+  before insert on notifications
+  for each row execute function set_notification_dedup_key();
+
 -- One notification per (type, task, recipient, day) — replaces the old
 -- recipient-less dedup key.
 create unique index notifications_dedup_idx on notifications (dedup_key);

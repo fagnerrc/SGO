@@ -39,11 +39,18 @@ alter table operations enable row level security;
 -- companies / profiles / processes
 -- ---------------------------------------------------------------------
 
+-- `x = ANY (subquery)` has special grammar when the right side is literally
+-- a subquery: Postgres expects the subquery to yield multiple rows of a
+-- scalar type to compare against, not one row containing an array value —
+-- `(select company_access from profiles ...)` returns a single uuid[] row,
+-- which this form can't use ("operator does not exist: uuid = uuid[]").
+-- unnest() turns it into what that grammar actually expects: one row per
+-- array element.
 create policy companies_select on companies for select
-  using (id = current_company() or id = any ((select company_access from profiles where id = auth.uid())));
+  using (id = current_company() or id = any (select unnest(company_access) from profiles where id = auth.uid()));
 
 create policy profiles_select on profiles for select
-  using (company_id = current_company() or company_id = any ((select company_access from profiles where id = auth.uid())));
+  using (company_id = current_company() or company_id = any (select unnest(company_access) from profiles where id = auth.uid()));
 
 create policy processes_select on processes for select
   using (company_id = current_company());
