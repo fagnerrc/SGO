@@ -1,20 +1,21 @@
 import { listCompanyProfiles } from "../lib/profiles";
 import { createTask } from "../lib/tasks";
 import type { Profile } from "../lib/types";
+import { renderNav } from "./nav";
 
 export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: string) => void, onCancel: () => void): Promise<void> {
-  root.innerHTML = `<div class="app-shell"><p>Carregando...</p></div>`;
+  root.innerHTML = `<div id="nav-mount"></div><div class="app-shell"><p>Carregando...</p></div>`;
+  await renderNav(root.querySelector("#nav-mount")!, "tasks");
 
   let profiles: Profile[];
   try {
     profiles = await listCompanyProfiles();
   } catch (err) {
-    root.innerHTML = `<div class="app-shell"><p class="error">Não foi possível carregar a lista de pessoas: ${(err as Error).message}</p></div>`;
+    root.querySelector(".app-shell")!.innerHTML = `<p class="error">Não foi possível carregar a lista de pessoas: ${(err as Error).message}</p>`;
     return;
   }
 
-  root.innerHTML = `
-    <div class="app-shell">
+  root.querySelector(".app-shell")!.innerHTML = `
       <header class="app-header">
         <button id="back-btn" class="link-button">&larr; Voltar</button>
         <h1>Nova tarefa</h1>
@@ -87,7 +88,6 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
         <p id="form-error" class="error" hidden></p>
         <button type="submit" id="submit-btn">Criar tarefa</button>
       </form>
-    </div>
   `;
 
   root.querySelector("#back-btn")!.addEventListener("click", onCancel);

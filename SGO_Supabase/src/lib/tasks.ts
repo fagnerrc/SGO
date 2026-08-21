@@ -1,4 +1,4 @@
-import { getClient } from "./supabase";
+import { getClient, throwSupabaseError } from "./supabase";
 import type { ChecklistItem, Task } from "./types";
 
 // Every mutation function below sends a fresh operation_id, so a retried
@@ -18,13 +18,13 @@ export async function listMyTasks(): Promise<Task[]> {
     .select("*")
     .eq("excluido", false)
     .order("prazo", { ascending: true, nullsFirst: false });
-  if (error) throw error;
+  if (error) throwSupabaseError(error);
   return data as Task[];
 }
 
 export async function getTask(taskId: string): Promise<Task> {
   const { data, error } = await getClient().from("tasks").select("*").eq("id", taskId).single();
-  if (error) throw error;
+  if (error) throwSupabaseError(error);
   return data as Task;
 }
 
@@ -34,13 +34,13 @@ export async function getChecklist(taskId: string): Promise<ChecklistItem[]> {
     .select("*")
     .eq("task_id", taskId)
     .order("position", { ascending: true });
-  if (error) throw error;
+  if (error) throwSupabaseError(error);
   return data as ChecklistItem[];
 }
 
 async function callAction<T = unknown>(fn: string, args: Record<string, unknown>): Promise<T> {
   const { data, error } = await getClient().rpc(fn, args);
-  if (error) throw error;
+  if (error) throwSupabaseError(error);
   return data as T;
 }
 
@@ -61,13 +61,37 @@ export const completeTask = (taskId: string, evidencia: string, justificativaAtr
 export const cancelTask = (taskId: string, motivo: string) =>
   callAction("cancel_task", { p_task_id: taskId, p_operation_id: newOperationId(), p_motivo: motivo });
 
+export const approveTask = (taskId: string) => callAction("approve_task", { p_task_id: taskId, p_operation_id: newOperationId() });
+
+export const rejectTask = (taskId: string, motivo: string) =>
+  callAction("reject_task", { p_task_id: taskId, p_operation_id: newOperationId(), p_motivo: motivo });
+
+// Same table, same RLS-filtered visibility as listMyTasks() — the approver
+// clause in tasks_select (0006/0007) is what actually decides who sees a
+// given pending-approval task, this is just a narrower status filter on
+// top. A task showing up here doesn't guarantee the viewer IS the
+// designated approver (a participant could also see it) — approve_task()/
+// reject_task() enforce that server-side regardless of what this list
+// shows, so acting on the wrong task here fails cleanly rather than
+// silently succeeding.
+export async function listPendingApprovals(): Promise<Task[]> {
+  const { data, error } = await getClient()
+    .from("tasks")
+    .select("*")
+    .eq("status", "Aguardando aprovação")
+    .eq("excluido", false)
+    .order("aguardando_desde", { ascending: true });
+  if (error) throwSupabaseError(error);
+  return data as Task[];
+}
+
 export async function toggleChecklistItem(itemId: string, done: boolean): Promise<void> {
   // Direct table update, not an RPC — task_checklist_items_update (0011)
   // is a simple RLS policy scoped, at the grant level, to just this one
   // column (see 0011's comment for why). Verified working end-to-end
   // through this exact code path in a real browser (PROGRESS.md).
   const { error } = await getClient().from("task_checklist_items").update({ feito: done }).eq("id", itemId);
-  if (error) throw error;
+  if (error) throwSupabaseError(error);
 }
 
 export interface NewTaskInput {

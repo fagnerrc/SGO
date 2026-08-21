@@ -229,6 +229,54 @@ tool's synthetic key action. (2) Typing text containing a Portuguese accented ch
 unaccented string, and again when set via `dispatchEvent`. Neither should recur when a real
 person uses a real keyboard.
 
+## DASHBOARD, KANBAN, APROVAÇÕES, COLABORADORES — built and tested through a real browser (2026-08-21)
+
+Ported the four highest-value remaining screens from the old `Index.html`, chosen by the user
+from a menu of all the pages the old system had. New: `src/views/nav.ts` (shared top nav, hides
+"Colaboradores" unless the viewer's role is `admin`/`diretoria`/`auditoria`), `src/views/
+dashboard.ts` + `src/lib/dashboard.ts` (KPI grid, status breakdown, recent activity — the two
+Chart.js canvases from the old dashboard were deliberately replaced with plain CSS bar rows
+rather than pulling in a charting dependency for one screen), `src/views/kanban.ts` (7 fixed
+status columns), `src/views/approvals.ts` (pending-approval list with real Approve/Reject
+actions), `src/views/collaborators.ts` (admin table + collaborator creation form). All four
+existing screens (`taskList`, `taskDetail`, `taskCreate`) were adjusted to render the shared nav.
+
+The collaborator form deliberately only exposes the fields that already exist on `profiles`
+(nome, e-mail, área, perfil de acesso) — the old modal's Cargo, Capacidade semanal, Substituto,
+Processos principais, and Observações fields have no schema support yet and aren't read by any
+automation, so they were left out rather than added as dead inputs. Flagged back to the user;
+add them (schema + form) if they turn out to matter in practice.
+
+Verified against a freshly seeded demo company ("Grupo Quintao", 4 users, 5 tasks in varied
+states, a linked process) through a real browser — not just a build check. This found **two real
+bugs**, both now fixed:
+
+1. **Every error message in the app rendered as `[object Object]`.** Every `lib/*.ts` function
+   did `if (error) throw error;` on a Supabase `{ data, error }` response, and every view's error
+   display did `err instanceof Error ? err.message : String(err)`. `PostgrestError` (and the
+   other supabase-js error shapes) don't extend the native `Error` class, so `instanceof Error`
+   was false everywhere, and `String()` on the plain error object produced `[object Object]`
+   instead of the real message. Caught by deliberately triggering a real server-side rejection
+   (approving a task as a non-approver) and reading the on-screen error instead of just checking
+   that the action failed. Fixed with a `throwSupabaseError()` helper in `src/lib/supabase.ts`
+   that all of `tasks.ts`/`dashboard.ts`/`profiles.ts` now route errors through, so every thrown
+   error is a real `Error` from here on.
+2. **The new collaborator's one-time temporary PIN was shown and then immediately erased.**
+   `collaborators.ts`'s submit handler set the result banner text, then called `renderPage(shell)`
+   — a full re-render of the entire screen, including recreating the "novo colaborador" panel in
+   its default-hidden state — which wiped the banner before a real admin could ever read it. This
+   is the one piece of information in that whole flow that matters (there's no "forgot PIN"
+   recovery), so it was a real functional bug, not cosmetic. Caught by checking the DOM
+   immediately after a real form submission instead of assuming success from the request
+   succeeding. Fixed by splitting the render into `renderPage()` (full page, once) and
+   `refreshRows(shell)` (table body only, used after every mutation), so the result banner and
+   the "novo colaborador" panel's open/closed state now survive a successful creation.
+
+Demo data (company, 6 profiles including two created live through the collaborator form, 5
+tasks, 1 process) was fully deleted afterward via a scoped cleanup script (delete children by
+`company_id` in FK order, then profiles, then the company, then each `auth.users` row via the
+Admin API) — nothing from this test run remains in the live project.
+
 ## Done — Phase 1: schema + RLS
 
 All in `supabase/migrations/`:

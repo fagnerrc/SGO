@@ -47,3 +47,12 @@ export function resetClientCache(): void {
   cachedClient = null;
   cachedToken = null;
 }
+
+// PostgrestError (and the other supabase-js error shapes) don't extend the
+// native Error class, so `err instanceof Error` is false for anything
+// thrown straight from a `{ data, error }` response — every view's error
+// display ends up rendering "[object Object]" instead of the real message.
+// Route every such error through here so callers always get a real Error.
+export function throwSupabaseError(error: { message: string }): never {
+  throw new Error(error.message);
+}

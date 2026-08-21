@@ -3,11 +3,15 @@ import { renderLogin } from "./views/login";
 import { renderTaskList } from "./views/taskList";
 import { renderTaskDetail } from "./views/taskDetail";
 import { renderTaskCreate } from "./views/taskCreate";
+import { renderDashboard } from "./views/dashboard";
+import { renderKanban } from "./views/kanban";
+import { renderApprovals } from "./views/approvals";
+import { renderCollaborators } from "./views/collaborators";
 
-// Deliberately minimal hash router — #/login, #/tasks, #/tasks/new, #/tasks/:id.
-// No SPA framework, matching the old system's plain-JS approach (see
-// SGO_Supabase_Migration_Prompt.md section 3); a proper router/state
-// layer is a fine thing to add once there's more than three screens.
+// Deliberately minimal hash router — no SPA framework, matching the old
+// system's plain-JS approach (see SGO_Supabase_Migration_Prompt.md section
+// 3). Routes: #/login, #/dashboard (default landing page), #/tasks,
+// #/tasks/new, #/tasks/:id, #/kanban, #/approvals, #/admin/collaborators.
 
 export function startApp(root: HTMLElement): void {
   window.addEventListener("hashchange", () => route(root));
@@ -15,7 +19,7 @@ export function startApp(root: HTMLElement): void {
 }
 
 function route(root: HTMLElement): void {
-  const hash = location.hash || "#/tasks";
+  const hash = location.hash || "#/dashboard";
   const session = loadSession();
 
   if (!session && hash !== "#/login") {
@@ -23,27 +27,45 @@ function route(root: HTMLElement): void {
     return;
   }
   if (session && hash === "#/login") {
-    location.hash = "#/tasks";
+    location.hash = "#/dashboard";
     return;
   }
 
   if (hash === "#/login") {
     renderLogin(root, () => {
-      location.hash = "#/tasks";
+      location.hash = "#/dashboard";
     });
     return;
   }
 
+  const openTask = (taskId: string) => {
+    location.hash = `#/tasks/${taskId}`;
+  };
+
+  if (hash === "#/dashboard" || hash === "") {
+    renderDashboard(root, openTask);
+    return;
+  }
+
+  if (hash === "#/kanban") {
+    renderKanban(root, openTask);
+    return;
+  }
+
+  if (hash === "#/approvals") {
+    renderApprovals(root);
+    return;
+  }
+
+  if (hash === "#/admin/collaborators") {
+    renderCollaborators(root);
+    return;
+  }
+
   if (hash === "#/tasks/new") {
-    renderTaskCreate(
-      root,
-      (taskId) => {
-        location.hash = `#/tasks/${taskId}`;
-      },
-      () => {
-        location.hash = "#/tasks";
-      },
-    );
+    renderTaskCreate(root, openTask, () => {
+      location.hash = "#/tasks";
+    });
     return;
   }
 
@@ -55,7 +77,5 @@ function route(root: HTMLElement): void {
     return;
   }
 
-  renderTaskList(root, (taskId) => {
-    location.hash = `#/tasks/${taskId}`;
-  });
+  renderTaskList(root, openTask);
 }

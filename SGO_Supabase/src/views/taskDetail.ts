@@ -1,5 +1,6 @@
 import { cancelTask, completeTask, getChecklist, getTask, pauseTask, resumeTask, startTask, toggleChecklistItem } from "../lib/tasks";
 import type { Task } from "../lib/types";
+import { renderNav } from "./nav";
 
 function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
@@ -9,13 +10,14 @@ function formatDuration(ms: number): string {
 }
 
 export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack: () => void): Promise<void> {
-  root.innerHTML = `<div class="app-shell"><p>Carregando...</p></div>`;
+  root.innerHTML = `<div id="nav-mount"></div><div class="app-shell"><p>Carregando...</p></div>`;
+  await renderNav(root.querySelector("#nav-mount")!, "tasks");
 
   let task: Task;
   try {
     task = await getTask(taskId);
   } catch (err) {
-    root.innerHTML = `<div class="app-shell"><p class="error">Não foi possível carregar a tarefa: ${(err as Error).message}</p></div>`;
+    root.querySelector(".app-shell")!.innerHTML = `<p class="error">Não foi possível carregar a tarefa: ${(err as Error).message}</p>`;
     return;
   }
   const checklist = await getChecklist(taskId).catch(() => []);
@@ -23,8 +25,7 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
   const isTimed = task.tipo === "Tarefa cronometrada";
   const timerRunning = task.timer_state === "running";
 
-  root.innerHTML = `
-    <div class="app-shell">
+  root.querySelector(".app-shell")!.innerHTML = `
       <header class="app-header">
         <button id="back-btn" class="link-button">&larr; Voltar</button>
         <h1>${task.code ?? ""}</h1>
@@ -84,7 +85,6 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
 
         <p id="action-error" class="error" hidden></p>
       </div>
-    </div>
   `;
 
   root.querySelector("#back-btn")!.addEventListener("click", onBack);

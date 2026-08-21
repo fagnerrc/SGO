@@ -1,6 +1,6 @@
 import { listMyTasks } from "../lib/tasks";
 import type { Task } from "../lib/types";
-import { logout } from "../lib/auth";
+import { renderNav } from "./nav";
 
 const STATUS_LABELS: Record<string, string> = {
   "Em andamento": "Em andamento",
@@ -22,25 +22,19 @@ function formatPrazo(prazo: string | null): string {
 
 export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: string) => void): Promise<void> {
   root.innerHTML = `
+    <div id="nav-mount"></div>
     <div class="app-shell">
       <header class="app-header">
         <h1>Minhas tarefas</h1>
-        <div class="app-header-actions">
-          <button id="new-task-btn">+ Nova tarefa</button>
-          <button id="logout-btn" class="link-button">Sair</button>
-        </div>
+        <button id="new-task-btn">+ Nova tarefa</button>
       </header>
       <div id="task-list" class="task-list">Carregando...</div>
     </div>
   `;
+  await renderNav(root.querySelector("#nav-mount")!, "tasks");
 
   root.querySelector("#new-task-btn")!.addEventListener("click", () => {
     location.hash = "#/tasks/new";
-  });
-
-  root.querySelector("#logout-btn")!.addEventListener("click", async () => {
-    await logout();
-    location.hash = "#/login";
   });
 
   const listEl = root.querySelector<HTMLDivElement>("#task-list")!;
