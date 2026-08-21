@@ -122,10 +122,41 @@ separate session concept to keep in sync.
 - **`can_view_conversation()`** — a SECURITY DEFINER helper mirroring the `conversations_select` RLS policy's logic, needed because `mark_conversation_read()` runs as the function owner and therefore bypasses RLS on `conversations`; without an explicit re-check it would have let anyone mark any conversation read.
 - Added `conversations_one_per_task`/`conversations_one_per_area` partial unique indexes so the get-or-create functions are actually race-safe (paired with `ON unique_violation` fallback fetches).
 
+## Done — Phase 5: recurring templates + scheduled automation
+
+**`0010_scheduled_automation.sql`**.
+
+- **`task_templates`** — this table didn't exist before phase 5; the old system's "recurring
+  task" concept lived only inside `V12_TimerDaily.gs`'s generation logic with no dedicated
+  table, so this migration plan didn't have one to carry over either. `create_task_template()` /
+  `set_task_template_active()` are the client-facing management functions (privileged/gestor
+  only); template rows are otherwise only read by `generate_daily_tasks()`.
+- **`generate_daily_tasks()`** — idempotent per template via `last_generated_on` (same guarantee
+  the original review confirmed the old trigger-duplication-tolerant design already had), uses
+  `FOR UPDATE SKIP LOCKED` when scanning templates, and wraps each template's generation in its
+  own exception handler (logged to `logs`) so one bad template can't abort the whole run.
+  Inserting the generated task automatically fires `tasks_notify_assigned` from phase 4 — no
+  extra notification code needed here, that's just what the trigger-based design from phase 4
+  buys for free.
+- **`generate_deadline_notifications()`** — TASK_OVERDUE / TASK_DUE_SOON (24h window) /
+  APPROVAL_PENDING (pending >24h, notifies the process's `aprovador_id`). Relies on the
+  day-bucketed, recipient-scoped `dedup_key` from phases 1/4 to avoid re-notifying on every
+  hourly run — this is the exact mechanism the original bug #2 (dedup key omitted the recipient)
+  was about, and it's already correct here by construction.
+- **Two structural fixes that come from the platform, not new code:** (1) `prazo` is a real
+  `timestamptz` column, so the old "date-only string parsed as UTC midnight" bug (a *different*
+  bug from the already-known `v1214TimeKeyFromDeadline_` one) has no equivalent here — Postgres
+  resolves timestamps unambiguously regardless of input format. (2) pg_cron does not silently
+  disable a job that keeps failing the way Apps Script disables a misbehaving trigger (bug #C2)
+  — failures show up in `cron.job_run_details` instead. The per-row `exception when others`
+  blocks in both functions exist for batch robustness (one bad row shouldn't sink the whole run),
+  not to work around a disablement risk that doesn't exist in this environment.
+- `generate_daily_tasks()`/`generate_deadline_notifications()` are deliberately **not** granted
+  to `authenticated`/`anon` — pg_cron-only, scheduled at the bottom of the migration
+  (`5 0 * * *` / `0 * * * *`, both UTC).
+
 ## Not started yet
 
-- **Phase 5 — scheduled automation.** pg_cron jobs for daily recurring task generation and
-  deadline notifications. Not started.
 - **Phase 6 — frontend.** Nothing under `src/` yet.
 - **Phase 7 — diagnostics/admin tooling.** Not started.
 
@@ -164,6 +195,18 @@ separate session concept to keep in sync.
    item 1, plus it specifically drops and recreates `notifications.dedup_key`/its unique index,
    so if 0004-0008 were ever actually applied to a real database before 0009 runs, double-check
    that ALTER sequence against whatever notification rows already exist.
+6. **No per-company timezone yet.** `0010`'s daily generation and deadline math both run on UTC
+   wall-clock time (`task_templates.deadline_time` is interpreted as UTC, `generate_daily_tasks`
+   fires at `5 0 * * *` UTC). Fine for a single-timezone company, wrong the moment SGO serves a
+   company outside UTC — a `companies.timezone` column plus timezone-aware generation is the
+   right fix, not implemented yet. `generate_deadline_notifications()` itself doesn't have this
+   problem (it compares real timestamps, not wall-clock dates), only the daily generation time
+   and the templates' `deadline_time` do.
+7. **`pg_cron` scheduling in `0010` is the least-tested part of the whole project so far** — it
+   depends on the extension being enabled (dashboard toggle) *and* on `cron.schedule()`'s exact
+   behavior on Supabase's managed Postgres, which can differ subtly from self-hosted pg_cron.
+   Verify both jobs actually appear in `cron.job` and produce rows in `cron.job_run_details`
+   after applying this migration, before trusting that automation is really running.
 2. **`risco`/`prioridade` are plain text, not enums** — the old source didn't give enough
    confirmed values to enumerate safely; tighten with a `CHECK (... IN (...))` once the real
    value set is confirmed against the old data.
