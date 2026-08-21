@@ -395,6 +395,33 @@ preservando os filtros ativos entre uma jogada e outra. Testado no navegador con
 (admin): busca por texto reduz a contagem corretamente, quadro e lista carregam com a barra e os
 controles certos.
 
+### Parte 2 — Tela de Processos + herança na criação de tarefa ✅
+
+`processes` só tinha `name`/`segregacao`/`conferente_id`/`aprovador_id` desde a migração original —
+nenhuma tela nunca usou o resto do conceito descrito no checklist antigo. `0027_processes.sql`
+adiciona código, área, descrição, dono, executor, SLA em horas + tolerância, risco, evidência
+obrigatória + orientação, estimativa padrão, checklist padrão e recorrência, mais três funções
+(`create_process`/`update_process`/`set_process_active`, todas `is_privileged()`-only — não havia
+nenhuma policy de update/insert em `processes`, só `processes_select`).
+
+`src/views/processes.ts` (nova tela, `#/admin/processes`, só aparece na sidebar pra
+admin/diretoria/auditoria): lista + formulário completo (RACI, SLA, checklist padrão reaproveitando
+o mesmo componente de checklist-builder do formulário de tarefa).
+
+A herança de verdade acontece só no frontend, em `taskCreate.ts`: ao escolher um processo, área,
+responsável (executor), estimativa, risco, prazo (calculado a partir de `sla_horas`) e o checklist
+padrão são pré-preenchidos — mas só quando o campo correspondente ainda está vazio, pra não
+sobrescrever o que a pessoa já tiver digitado, e o checklist só é copiado se ainda estiver vazio
+(selecionar de novo ou trocar de processo não duplica nem apaga itens já adicionados). O backend
+(`create_task`) já aceitava `p_process_id` desde a migração original — só faltava o campo no
+formulário e a lógica de preenchimento.
+
+Testado de ponta a ponta contra o projeto real: criei um processo "Fechamento mensal" (Financeiro,
+SLA 48h, risco Alto, checklist com 2 itens) pelo formulário, abri "Nova tarefa", selecionei o
+processo e confirmei os campos preenchidos automaticamente na tela, enviei o formulário, e
+verifiquei direto no banco que a tarefa criada tinha `area`, `risco`, `process_id` e os itens de
+checklist corretos. Processo e tarefa de teste apagados depois.
+
 ## VISUAL REDESIGN v2 — configurable branding + real charts (2026-08-21)
 
 The first visual pass (dark green sidebar) didn't land — "do jeito que ficou foi muito ruim". The

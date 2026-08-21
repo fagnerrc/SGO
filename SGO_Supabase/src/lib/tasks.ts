@@ -112,6 +112,7 @@ export interface NewTaskInput {
   responsavelId: string;
   descricao?: string;
   tipo?: string;
+  processId?: string;
   prazo?: string; // ISO datetime, from a <input type="datetime-local">
   estimativa?: number;
   prioridade?: string;
@@ -127,6 +128,7 @@ export async function createTask(input: NewTaskInput): Promise<{ id: string }> {
     p_responsavel_id: input.responsavelId,
     p_descricao: input.descricao ?? "",
     p_tipo: input.tipo ?? "Demanda operacional",
+    p_process_id: input.processId ?? null,
     p_prazo: input.prazo ? new Date(input.prazo).toISOString() : null,
     p_estimativa: input.estimativa ?? 0,
     p_prioridade: input.prioridade ?? "Normal",

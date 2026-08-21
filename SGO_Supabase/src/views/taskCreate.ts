@@ -1,4 +1,5 @@
 import { listCompanyProfiles } from "../lib/profiles";
+import { listProcesses, type Process } from "../lib/processes";
 import { createTask } from "../lib/tasks";
 import type { Profile } from "../lib/types";
 import { renderNav } from "./nav";
@@ -8,12 +9,14 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
   await renderNav(root.querySelector("#nav-mount")!, "tasks");
 
   let profiles: Profile[];
+  let processes: Process[];
   try {
-    profiles = await listCompanyProfiles();
+    [profiles, processes] = await Promise.all([listCompanyProfiles(), listProcesses().catch(() => [])]);
   } catch (err) {
     root.querySelector(".app-shell")!.innerHTML = `<p class="error">Não foi possível carregar a lista de pessoas: ${(err as Error).message}</p>`;
     return;
   }
+  const activeProcesses = processes.filter((p) => p.ativo);
 
   root.querySelector(".app-shell")!.innerHTML = `
       <header class="app-header">
@@ -26,6 +29,12 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
 
         <label for="descricao">Descrição</label>
         <textarea id="descricao" name="descricao" rows="3"></textarea>
+
+        <label for="processo">Processo (opcional)</label>
+        <select id="processo" name="processo">
+          <option value="">Nenhum — tarefa avulsa</option>
+          ${activeProcesses.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}${p.area ? ` (${escapeHtml(p.area)})` : ""}</option>`).join("")}
+        </select>
 
         <div class="task-form-row">
           <div>
@@ -122,6 +131,37 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
     renderChecklist();
   }
 
+  const processoSelect = root.querySelector<HTMLSelectElement>("#processo")!;
+  processoSelect.addEventListener("change", () => {
+    const process = activeProcesses.find((p) => p.id === processoSelect.value);
+    if (!process) return;
+
+    const areaInput = root.querySelector<HTMLInputElement>("#area")!;
+    if (!areaInput.value.trim() && process.area) areaInput.value = process.area;
+
+    const responsavelSelect = root.querySelector<HTMLSelectElement>("#responsavel")!;
+    if (!responsavelSelect.value && process.executor_id) responsavelSelect.value = process.executor_id;
+
+    (root.querySelector<HTMLInputElement>("#estimativa")!).value = String(process.estimativa_padrao);
+    (root.querySelector<HTMLSelectElement>("#risco")!).value = process.risco;
+
+    const prazoInput = root.querySelector<HTMLInputElement>("#prazo")!;
+    if (!prazoInput.value && process.sla_horas) {
+      const deadline = new Date(Date.now() + process.sla_horas * 3600000);
+      deadline.setSeconds(0, 0);
+      prazoInput.value = deadline.toISOString().slice(0, 16);
+    }
+
+    // Only seed the checklist from the process's template when the
+    // person hasn't already started building their own — re-selecting a
+    // process (or picking a different one) shouldn't silently duplicate
+    // or wipe out items someone already typed.
+    if (checklistItems.length === 0 && process.checklist_padrao.length > 0) {
+      checklistItems.push(...process.checklist_padrao);
+      renderChecklist();
+    }
+  });
+
   root.querySelector("#checklist-add-btn")!.addEventListener("click", addChecklistItem);
   checklistInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -152,6 +192,7 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
         descricao: (form.elements.namedItem("descricao") as HTMLTextAreaElement).value.trim(),
         area: (form.elements.namedItem("area") as HTMLInputElement).value.trim(),
         tipo: (form.elements.namedItem("tipo") as HTMLSelectElement).value,
+        processId: (form.elements.namedItem("processo") as HTMLSelectElement).value || undefined,
         responsavelId,
         prazo: (form.elements.namedItem("prazo") as HTMLInputElement).value || undefined,
         estimativa: Number((form.elements.namedItem("estimativa") as HTMLInputElement).value || 0),
