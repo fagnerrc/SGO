@@ -30,13 +30,49 @@ All in `supabase/migrations/`:
   **no write policies at all** for regular clients on purpose (see README "Design decisions") —
   all mutation goes through `SECURITY DEFINER` functions, not yet written (Phase 2).
 
+## Done — Phase 2: task mutation functions
+
+**`0007_task_functions.sql`** — all writes to `tasks` now go exclusively through these
+`SECURITY DEFINER` functions (RLS on `tasks` grants no direct write to `authenticated` — see
+0006). Each one calls `set_config('sgo.action', ..., true)` immediately before its `UPDATE` so
+`enforce_task_transition()` (0003) can verify the action matches the status it's trying to
+reach.
+
+- `create_task(...)` — authorization check, process/segregation-of-duties check, inserts the
+  task + initial checklist + a `task_history` row.
+- `start_task` / `pause_task` / `resume_task` — the timer state machine; `pause_task` closes the
+  open `task_timer_sessions` row and folds its duration into `tasks.timer_total_ms`.
+- `wait_task` / `approval_wait_task` — 'Aguardando terceiro' / 'Aguardando aprovação'.
+- `complete_task` — requires evidence, a fully-done checklist, approval (when the linked
+  process has an `aprovador_id`), and a delay justification when late — checked uniformly for
+  every task, not just timed ones.
+- `cancel_task` — **new in this rewrite**: the old system let a generic `update` reach
+  'Cancelada' with no checks at all (bug #4). Now it's the only path there, and it requires a
+  non-empty reason.
+- `approve_task` / `reject_task` — only the process's designated `aprovador_id` or a privileged
+  role. `reject_task` is the only sanctioned path to 'Reprovada/devolvida' (closes the other
+  half of bug #4/#6).
+- `update_task(p_task_id, p_operation_id, p_patch jsonb)` — non-status edits only; explicitly
+  rejects a patch touching `status`/`evidencia`/`approval_*`/`timer_*`/etc. Changing `area` or
+  `responsavel_id` requires a privileged role, or a gestor acting entirely within their own area
+  on both the old and new value — this closes bug #3 (gestor moving a task out of their own
+  authority), which the old `canMutateTaskV12_` never checked on the post-mutation side.
+- `claim_operation()` / `complete_operation()` / `fail_operation()` — the idempotency ledger
+  wrapper every action function uses first, replacing the old full-column text-search scan
+  (`appendChangeOnceV12_`) with a unique-index lookup.
+
+**Bug found and fixed while writing this phase, not in the original review:** the first draft
+of `approve_task`/`reject_task` used the general `can_mutate_task()` baseline (responsável/
+solicitante/participante/gestor-of-area/privileged), which would have wrongly blocked a
+legitimate approver from a *different* area or department (a very normal case — e.g. a director
+approving a request from another team) from approving or even seeing the task. Fixed by:
+(1) a separate `lock_task_for_approval()` that only checks company membership, letting
+`approve_task`/`reject_task` do their own narrower "must be the aprovador or privileged" check;
+(2) added an approver clause to the `tasks_select` RLS policy in `0006_rls_policies.sql` so the
+approver can actually see the task in the first place. Both changes are in this commit.
+
 ## Not started yet
 
-- **Phase 2 — task mutation functions.** `create_task()`, `mutate_task()`/action-specific
-  functions (`start_task`, `pause_task`, `resume_task`, `complete_task`, `cancel_task`,
-  `reject_task`, `approve_task`), wired to call `set_config('sgo.action', ..., true)` before
-  writing so the `enforce_task_transition()` trigger lets the write through. This is the
-  highest-value next step — it's the most complex and most bug-prone module in the old system.
 - **Phase 3 — auth.** A PIN-login Edge Function using `login_attempts`/`sessions` (schema is
   ready; no function code yet). Decide: custom JWT vs. Supabase Auth admin API to mint a real
   session on successful PIN check.
@@ -51,12 +87,15 @@ All in `supabase/migrations/`:
 
 ## Open questions / things to verify before relying on this schema
 
-1. **Untested against a real Postgres/Supabase instance.** These migrations were written by
-   reading the SQL by eye; they have not been run with `supabase db push` or against a local
-   Supabase instance yet. Before building on top of them, run them against a throwaway project
-   and fix whatever the first `db push` surfaces (likely candidates: exact array/`ANY` syntax
-   in `0006`'s `company_access` checks, and whether `pg_cron` is available on your Supabase
-   plan — it requires the extension to be enabled in the dashboard first).
+1. **Untested against a real Postgres/Supabase instance.** All seven migrations (0001-0007)
+   were written by reading the SQL by eye; none have been run with `supabase db push` or against
+   a local Supabase instance yet. Before building a frontend on top of them, run them against a
+   throwaway project and fix whatever the first `db push` surfaces. Likely candidates: exact
+   array/`ANY` syntax in `0006`'s `company_access` checks; whether `pg_cron` is available on your
+   Supabase plan (needs enabling in the dashboard first); and in `0007`'s `update_task()`, the
+   `jsonb_array_elements_text(...)::uuid`/`::text` casts used to turn a JSON array into
+   `participantes uuid[]`/`tags text[]` — these are standard Postgres but haven't been exercised
+   against a real call.
 2. **`risco`/`prioridade` are plain text, not enums** — the old source didn't give enough
    confirmed values to enumerate safely; tighten with a `CHECK (... IN (...))` once the real
    value set is confirmed against the old data.

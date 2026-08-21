@@ -63,6 +63,13 @@ create policy tasks_select on tasks for select
       or auth.uid() = any (participantes)
       or is_privileged()
       or (current_user_role() = 'gestor' and area = (select area from profiles where id = auth.uid()))
+      -- the process's designated approver can see the task even if they're
+      -- outside its area/participants (e.g. a director approving a request
+      -- from another department) — must stay in sync with the approver
+      -- check in approve_task()/reject_task() (0007_task_functions.sql)
+      or exists (
+        select 1 from processes pr where pr.id = tasks.process_id and pr.aprovador_id = auth.uid()
+      )
     )
   );
 
