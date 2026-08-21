@@ -17,6 +17,19 @@ writes to it.
 
 See [`PROGRESS.md`](./PROGRESS.md) for what's done and what's next.
 
+**Live at https://grupo-quintao-sgo.vercel.app** (Vercel project `grupo-quintao-sgo`, deployed
+manually so far via `vercel deploy --prod`) — chosen over the GitHub Pages deployment below as
+the primary URL specifically because Vercel's `*.vercel.app` subdomain comes from the **project
+name**, not the GitHub account that owns the repo, so the link doesn't carry a personal
+username. Also live at https://fagnerrc.github.io/SGO/, deployed automatically by
+`.github/workflows/deploy-frontend.yml` on every push to `master` that touches this folder — kept
+running as a second, zero-maintenance mirror. Both read `VITE_SUPABASE_URL`/
+`VITE_SUPABASE_ANON_KEY` from their own platform's secret store (Vercel env vars / GitHub repo
+secrets, neither committed) and bake them into the build; the anon key is safe to ship publicly,
+RLS is what actually protects data. `vite.config.ts`'s `base` path differs between the two (root
+`/` for Vercel, `/SGO/` for the GitHub Pages project-page path) via the `VITE_BASE_PATH` env var,
+which only the GitHub Actions workflow sets.
+
 ## Structure
 
 ```
