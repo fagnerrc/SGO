@@ -200,35 +200,71 @@ screenshot/console check in this session's transcript around the phase 6 work.
   fixed by jumping to Vite 8, which is a breaking change not attempted here. Accepted as a known
   risk for now; revisit before this is used somewhere the dev server itself is exposed.
 
-## Not started yet
+## Done — Phase 7: admin tooling, diagnostics, first-user bootstrap
 
-- **Phase 7 — diagnostics/admin tooling.** Not started.
+**`0012_admin_diagnostics.sql`** + **`supabase/functions/bootstrap-company/`**. This closes out
+every phase in the original plan (`SGO_Supabase_Migration_Prompt.md` section 8).
+
+- **Bootstrap gap closed** (flagged as an open question since phase 3): `can_bootstrap()` /
+  `bootstrap_company()` / `bootstrap_set_initial_pin()` are each self-limiting — they check that
+  nothing has been bootstrapped yet as their own authorization gate (no `companies` row exists /
+  no `credentials` row exists yet for that company), rather than checking a role, since no
+  logged-in user exists yet to check a role against. `bootstrap-company` (Edge Function) chains
+  them together with the Admin API call needed to create the actual `auth.users` row. This is
+  meant to stay deployed permanently — it locks itself out after first use, not a one-time script
+  to delete afterward.
+- **Admin tooling**: `update_company_settings()` (the lockout config added in phase 3 finally has
+  a way to be changed), `set_profile_role()`, `set_profile_active()` — deactivating a collaborator
+  also calls `revoke_sessions_for()` immediately, same reasoning as phase 3's PIN-reset fix: a
+  security-relevant status change shouldn't linger for up to 8h because nobody thought to also
+  touch `sessions`.
+- **Diagnostics**: `report_client_error()` replaces `reportClientErrorServer`
+  (`V12_Diagnostics.gs`) — a direct write to `logs` (new `'diagnostic'` kind added to the
+  `log_kind` enum). No separate viewing function needed: admins already read this data through
+  the existing `logs_select` RLS policy from phase 1. The old system's in-memory
+  buffer-with-periodic-flush doesn't have an equivalent here on purpose — that existed to batch
+  writes against Sheets' comparatively expensive API; a real Postgres table with no row-count
+  ceiling doesn't need the same workaround.
+- **Backup/restore deliberately NOT reimplemented as app code.** The old system's backup/restore
+  logic was itself the source of two real bugs in the original review (C3: restoring a stale
+  snapshot; A2: backup maintenance silently wiping backups on a mid-write failure) — exactly the
+  class of hand-rolled persistence logic this migration exists to get away from. Use Supabase's
+  built-in point-in-time recovery / scheduled backups (paid plans) or `pg_dump` instead. This is a
+  deliberate scope decision, not an oversight — don't build a custom restore RPC without a strong
+  reason, given the history.
+
+## Everything in the original plan has a first pass now — what that does and doesn't mean
+
+All 7 phases from `SGO_Supabase_Migration_Prompt.md` section 8 have at least a first
+implementation (12 migrations, 4 Edge Functions, a frontend foundation covering 3 of the ~8
+screens the old system had). That is **not** the same as "ready to replace the Apps Script
+system in production." The single most important next step, unchanged since phase 1, is still:
+run these migrations against a real Supabase project and see what breaks — nothing in this
+project has executed against a live Postgres instance except the frontend's own build step.
+Treat every phase's "done" as "designed and internally consistent," not "verified."
 
 ## Open questions / things to verify before relying on this schema
 
-1. **Untested against a real Postgres/Supabase instance.** All eight migrations (0001-0008) and
-   both Edge Functions were written by reading the code by eye; none have been run with
-   `supabase db push`/`supabase functions deploy`, or against a local Supabase instance, yet.
-   Before building a frontend on top of them, run them against a throwaway project and fix
-   whatever the first `db push`/`functions serve` surfaces. Likely candidates: exact array/`ANY`
-   syntax in `0006`'s `company_access` checks; whether `pg_cron` is available on your Supabase
-   plan (needs enabling in the dashboard first); in `0007`'s `update_task()`, the
+1. **Untested against a real Postgres/Supabase instance — still the #1 item.** All twelve
+   migrations (0001-0012) and five Edge Functions were written by reading the code by eye; none
+   have been run with `supabase db push`/`supabase functions deploy`, or against a local
+   Supabase instance, yet (the frontend build is the one exception — see phase 6). Before
+   trusting any of this, run the migrations against a throwaway project and fix whatever the
+   first `db push` surfaces. Likely candidates: exact array/`ANY` syntax in `0006`'s
+   `company_access` checks; whether `pg_cron` is available on your Supabase plan (needs enabling
+   in the dashboard first); in `0007`'s `update_task()`, the
    `jsonb_array_elements_text(...)::uuid`/`::text` casts used to turn a JSON array into
    `participantes uuid[]`/`tags text[]`; and in `0008`, whether creating a trigger on `auth.users`
    is permitted under your project's role setup (it's the standard documented Supabase pattern,
    but depends on the migration being run as a role with the right privileges on the `auth`
    schema — usually true for the `postgres` role `supabase db push` uses by default).
-2. **First-user bootstrap has no path yet.** `admin-create-user` requires the *caller* to already
-   be `is_privileged()` — which is correct for provisioning the 2nd, 3rd, ... user, but means
-   there is currently no way to create the very first company/admin from a blank database. Needs
-   either: a one-time SQL script run directly by the project owner (bypassing the Edge Function)
-   to insert the first `companies` row and manually create+promote one `auth.users`/`profiles`
-   row to `role = 'admin'`, or a dedicated `bootstrap_company()` function that only works when
-   the `companies` table is empty. Not designed yet — flagging so it isn't a surprise when
-   someone tries to log into a fresh project and there's no account to log in with.
-3. **No `create_company()` / company-settings functions yet.** The `companies` table (with the
-   phase 3 lockout columns) can currently only be written to directly with the service role —
-   there's no RPC for an admin to edit their own company's settings (e.g. `login_max_attempts`).
+2. **First-user bootstrap: closed in phase 7** (`can_bootstrap()`/`bootstrap_company()`/
+   `bootstrap_set_initial_pin()` in `0012`, called from `supabase/functions/bootstrap-company/`).
+   Left here as a record that it was a real gap and how it got closed, not as an open item.
+3. **Company settings can be edited (phase 7's `update_company_settings()`), but there's still no
+   `create_company()`** for a second/third company in an already-bootstrapped project —
+   `bootstrap_company()` (phase 7) only works once, for the very first one. Not needed until SGO
+   actually hosts more than one company in the same project; add it then.
 4. **'area' conversations deliberately don't send per-message notifications** (`notify_message()`
    in `0009`) — treated as a broadcast channel people check rather than get pinged for on every
    message, to avoid notifying an entire department every time anyone posts. This was a judgment
@@ -251,12 +287,14 @@ screenshot/console check in this session's transcript around the phase 6 work.
    behavior on Supabase's managed Postgres, which can differ subtly from self-hosted pg_cron.
    Verify both jobs actually appear in `cron.job` and produce rows in `cron.job_run_details`
    after applying this migration, before trusting that automation is really running.
-2. **`risco`/`prioridade` are plain text, not enums** — the old source didn't give enough
+8. **`risco`/`prioridade` are plain text, not enums** — the old source didn't give enough
    confirmed values to enumerate safely; tighten with a `CHECK (... IN (...))` once the real
    value set is confirmed against the old data.
-3. **Reopening a terminal task has no path at all yet** — `enforce_task_transition()` blocks it
-   unconditionally (`action <> 'reopen'` is never true because no function ever sets that
-   action). Decide the audit-trail requirements for a legitimate reopen before adding it.
-4. **Direct-conversation creation isn't modeled yet** — `conversation_participants` exists but
-   nothing populates it; that's part of Phase 2/4 (creating a conversation is itself a
-   mutation with a rule: "must include the creator").
+9. **Reopening a terminal task has no path at all yet** — `enforce_task_transition()` (0003)
+   blocks it unconditionally (`action <> 'reopen'` is never true because no function ever sets
+   that action). Decide the audit-trail requirements for a legitimate reopen before adding it.
+   This is the one deliberate design gap that's stayed open across every phase — a reopen action
+   didn't fit naturally into phase 2 (task ops), phase 7 (admin tooling) is arguably where it
+   belongs, and it still isn't built.
+10. **No local-first outbox** (phase 6) and **no chat/notifications/admin/diagnostics UI** — see
+    the phase 6 section above for the full list; not repeated here.

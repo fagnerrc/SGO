@@ -66,6 +66,21 @@ admin-create-user/` provisions a new collaborator (creates the underlying Supaba
 an initial temporary PIN) — see `PROGRESS.md` for the current gap around bootstrapping the very
 first user of a brand-new project.
 
+## First-time setup (phase 7)
+
+There's no seed data and no default admin account. After applying the migrations and deploying
+the Edge Functions, call `bootstrap-company` once to create the first company and its first
+admin:
+
+```bash
+curl -X POST https://your-project-ref.supabase.co/functions/v1/bootstrap-company \
+  -H "Content-Type: application/json" \
+  -d '{"company_name":"Grupo Quintão","admin_email":"admin@example.com","admin_full_name":"Admin","admin_pin":"1234"}'
+```
+
+It's safe to leave deployed permanently — it locks itself out the moment a company exists. From
+there, that admin logs in via `pin-login` and uses `admin-create-user` to invite everyone else.
+
 ## Design decisions worth knowing before you read the schema
 
 - **Mutations go through functions, not raw table writes.** For `tasks`, `notifications`,
