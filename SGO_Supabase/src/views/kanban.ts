@@ -1,7 +1,9 @@
+import { applyTaskFilters, DEFAULT_FILTERS, type TaskFilterState } from "../lib/taskFilters";
 import { listCompanyProfiles } from "../lib/profiles";
 import { approvalWaitTask, auditTask, cancelTask, completeTask, listMyTasks, rejectTask, startTask, waitTask } from "../lib/tasks";
 import type { Profile, Task, TaskStatus } from "../lib/types";
 import { initials, priorityBadge } from "./badges";
+import { renderFilterBar } from "./filterBar";
 import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
 
@@ -143,24 +145,52 @@ export async function renderKanban(root: HTMLElement, onOpenTask: (taskId: strin
   }
 
   const profileById = new Map(profiles.map((p) => [p.id, p]));
-  renderBoard(shell, tasks, profileById, onOpenTask, () => renderKanban(root, onOpenTask));
+
+  shell.innerHTML = `
+    <h1>Quadro Kanban</h1>
+    <p class="dashboard-subtitle">Arraste um card para uma coluna destacada, ou use o menu "Mover para..." no card.</p>
+    <div id="filter-mount"></div>
+    <p id="kanban-error" class="error" hidden></p>
+    <div id="board-mount"></div>
+  `;
+  const boardMount = shell.querySelector<HTMLDivElement>("#board-mount")!;
+  const errorEl = shell.querySelector<HTMLParagraphElement>("#kanban-error")!;
+  const showError = (err: unknown) => {
+    errorEl.textContent = err instanceof Error ? err.message : String(err);
+    errorEl.hidden = false;
+  };
+
+  let currentFilter: TaskFilterState = { ...DEFAULT_FILTERS };
+
+  async function reload(): Promise<void> {
+    try {
+      tasks = await listMyTasks();
+    } catch (err) {
+      showError(err);
+      return;
+    }
+    renderBoard(boardMount, applyTaskFilters(tasks, currentFilter), profileById, onOpenTask, reload, showError);
+  }
+
+  renderFilterBar(shell.querySelector<HTMLDivElement>("#filter-mount")!, { profiles }, (state) => {
+    currentFilter = state;
+    renderBoard(boardMount, applyTaskFilters(tasks, state), profileById, onOpenTask, reload, showError);
+  });
 }
 
 function renderBoard(
-  shell: HTMLDivElement,
+  boardMount: HTMLDivElement,
   tasks: Task[],
   profileById: Map<string, Profile>,
   onOpenTask: (taskId: string) => void,
   reload: () => void,
+  showError: (err: unknown) => void,
 ): void {
   const byStatus = new Map<string, Task[]>();
   for (const status of COLUMNS) byStatus.set(status, []);
   for (const task of tasks) byStatus.get(task.status)?.push(task);
 
-  shell.innerHTML = `
-    <h1>Quadro Kanban</h1>
-    <p class="dashboard-subtitle">Arraste um card para uma coluna destacada, ou use o menu "Mover para..." no card.</p>
-    <p id="kanban-error" class="error" hidden></p>
+  boardMount.innerHTML = `
     <div class="kanban-board">
       ${COLUMNS.map((status) => {
         const items = byStatus.get(status)!;
@@ -178,12 +208,7 @@ function renderBoard(
     </div>
   `;
 
-  const errorEl = shell.querySelector<HTMLParagraphElement>("#kanban-error")!;
-  const showError = (err: unknown) => {
-    errorEl.textContent = err instanceof Error ? err.message : String(err);
-    errorEl.hidden = false;
-  };
-
+  const shell = boardMount;
   const tasksById = new Map(tasks.map((t) => [t.id, t]));
 
   async function performMove(taskId: string, target: TaskStatus): Promise<void> {

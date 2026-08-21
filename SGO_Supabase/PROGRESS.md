@@ -361,6 +361,40 @@ error, clears the local session, and redirects to `#/login`, instead of silently
 profile-less shell. Reproduced with the exact stale JWT via a direct RPC call before writing the
 fix, and confirmed fixed the same way afterward.
 
+## CHECKLIST DO SISTEMA ANTIGO — plano de 7 partes (2026-08-21)
+
+O usuário mandou o checklist funcional completo do sistema antigo (Apps Script, 51 seções) pedindo
+uma análise comparativa contra o SGO_Supabase — o que vale trazer, o que já está resolvido melhor
+pela arquitetura nova, o que é discutível. Análise publicada como Artifact
+(`analise_checklist_sgo.html`), sem alterar nada até aprovação. O usuário aprovou seguir com 7
+partes, deixando de fora por enquanto os itens que dependiam de mais contexto operacional (tags/
+cliente, chat interno, campos cadastrais sem cálculo automático em Colaboradores) — e pediu para
+dividir em partes e rodar de forma autônoma (via `/loop`) por até 8 horas, uma parte de cada vez,
+testando/commitando/publicando a cada parte concluída:
+
+1. Filtros em Tarefas + Kanban.
+2. Tela de Processos (RACI, SLA, segregação, checklist padrão, recorrência) + seleção de processo
+   ao criar tarefa.
+3. Tela "Meu Trabalho" (abas: hoje/atrasadas, próximas, aguardando, devolvidas, concluídas).
+4. Cronômetro rápido ("Iniciar tarefa") + regra de um cronômetro ativo por pessoa + Timer Dock
+   flutuante.
+5. Toasts (substituindo erro inline) + rede de segurança para erros JS não tratados.
+6. Capacidade semanal em Colaboradores + cálculo de ocupação no Dashboard.
+7. Upload de logo em arquivo (Supabase Storage) na tela de Configurações.
+
+### Parte 1 — Filtros em Tarefas + Kanban ✅
+
+`src/lib/taskFilters.ts` (novo): `TaskFilterState` (busca, status, responsável, prioridade, risco,
+prazo, ordenação) + `applyTaskFilters()`, pura, aplicada sobre a lista já buscada via
+`listMyTasks()` — sem RPC nova, mesma filosofia de `computeDashboardStats()`. `src/views/
+filterBar.ts` (novo): barra de filtro compartilhada, reaproveitada em `taskList.ts` (com status e
+ordenação) e `kanban.ts` (sem status, já que as colunas cumprem esse papel). No Kanban, a barra
+precisou ficar **fora** da área que o drag-and-drop redesenha — antes `renderBoard()` reescrevia o
+`.app-shell` inteiro a cada movimento de card; agora só um `#board-mount` interno é redesenhado,
+preservando os filtros ativos entre uma jogada e outra. Testado no navegador contra a conta real
+(admin): busca por texto reduz a contagem corretamente, quadro e lista carregam com a barra e os
+controles certos.
+
 ## VISUAL REDESIGN v2 — configurable branding + real charts (2026-08-21)
 
 The first visual pass (dark green sidebar) didn't land — "do jeito que ficou foi muito ruim". The

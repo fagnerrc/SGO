@@ -1004,6 +1004,45 @@ a {
 }
 
 /* ---------------------------------------------------------------- */
+/* Filter toolbar (Tarefas / Kanban)                                  */
+/* ---------------------------------------------------------------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.toolbar .control {
+  height: 38px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.83rem;
+}
+.toolbar .control:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  outline: none;
+}
+.toolbar .grow {
+  flex: 1;
+  min-width: 180px;
+}
+.toolbar .btn-outline {
+  height: 38px;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- */
 /* Kanban                                                             */
 /* ---------------------------------------------------------------- */
 
