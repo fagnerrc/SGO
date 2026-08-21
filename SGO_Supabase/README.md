@@ -23,21 +23,33 @@ See [`PROGRESS.md`](./PROGRESS.md) for what's done and what's next.
 SGO_Supabase/
 ├── supabase/
 │   ├── migrations/   — SQL schema, in order (0001, 0002, ...)
-│   └── functions/    — Edge Functions (Deno), added from Phase 2 onward
-├── src/               — frontend (added from Phase 6 onward)
-└── .env.example       — required environment variables (placeholders only)
+│   └── functions/    — Edge Functions (Deno): pin-login, admin-create-user
+├── src/               — frontend (plain TypeScript + Vite, no framework)
+│   ├── lib/           — supabase client, session, auth, tasks data access
+│   └── views/         — login, task list, task detail
+├── .env.example       — backend/Edge Function env vars (placeholders only)
+└── .env.local.example — frontend (Vite) env vars (placeholders only)
 ```
 
 ## Getting started (once you have a Supabase project)
 
 1. Create a project at [supabase.com](https://supabase.com) (or run Supabase locally with the
    Supabase CLI).
-2. Copy `.env.example` to `.env` and fill in your project's `SUPABASE_URL` and
-   `SUPABASE_ANON_KEY` — **never commit real values**.
+2. Copy `.env.example` to `.env` and fill in your project's `SUPABASE_URL`,
+   `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_JWT_SECRET` — **never commit
+   real values**. These are used by the Edge Functions (`supabase secrets set`).
 3. Apply the migrations in `supabase/migrations/` in order, either via the Supabase CLI
-   (`supabase db push`) or by pasting each file into the SQL editor in order.
-4. The migrations have not yet been run against a real Supabase project as part of this
-   session — see `PROGRESS.md` for what to double-check first.
+   (`supabase db push`) or by pasting each file into the SQL editor in order. Enable the
+   `pg_cron` extension first (dashboard → Database → Extensions) — `0010` schedules jobs with it.
+4. Deploy the Edge Functions: `supabase functions deploy pin-login` and
+   `supabase functions deploy admin-create-user`.
+5. For the frontend: `npm install`, copy `.env.local.example` to `.env.local` and fill in the
+   same URL/anon key, then `npm run dev` (or `npm run build` for a production bundle in
+   `dist/`).
+6. **None of the above has actually been run against a real Supabase project as part of this
+   session** — only `npm run build` and a local dev-server smoke test of the login screen have
+   been verified. See `PROGRESS.md` for what to double-check first, especially before deploying
+   the SQL migrations.
 
 ## Auth model (phase 3)
 

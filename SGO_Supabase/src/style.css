@@ -1,0 +1,190 @@
+:root {
+  color-scheme: light;
+  --border: #d8dce1;
+  --bg: #f5f6f8;
+  --card: #ffffff;
+  --text: #1b1f24;
+  --muted: #6b7280;
+  --brand: #2f6fed;
+  --danger: #d64545;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2rem;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.login-card h1 {
+  margin: 0 0 0.5rem;
+}
+
+.login-card input {
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.login-card button {
+  margin-top: 0.5rem;
+  padding: 0.7rem;
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+.app-shell {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--brand);
+  padding: 0;
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.task-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 0.15rem 0.75rem;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+}
+
+.task-card-code {
+  grid-row: 1;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.task-card-title {
+  grid-column: 1 / span 2;
+  grid-row: 2;
+  font-weight: 600;
+}
+
+.task-card-status {
+  grid-row: 1;
+  grid-column: 3;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: #eef1f6;
+  justify-self: end;
+}
+
+.task-card-deadline {
+  grid-row: 2;
+  grid-column: 3;
+  font-size: 0.8rem;
+  color: var(--muted);
+  justify-self: end;
+}
+
+.task-detail section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.timer-panel {
+  text-align: center;
+}
+
+.timer-total {
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 0.75rem;
+}
+
+.timer-actions button,
+.complete-panel button {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  margin-right: 0.5rem;
+}
+
+.danger-button {
+  padding: 0.6rem 1.2rem;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: none;
+  color: var(--danger);
+}
+
+.checklist-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.complete-panel textarea {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  margin-bottom: 0.5rem;
+}

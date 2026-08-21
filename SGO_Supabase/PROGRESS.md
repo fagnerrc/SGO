@@ -155,9 +155,53 @@ separate session concept to keep in sync.
   to `authenticated`/`anon` — pg_cron-only, scheduled at the bottom of the migration
   (`5 0 * * *` / `0 * * * *`, both UTC).
 
+## Done — Phase 6: frontend foundation (partial — see gaps below)
+
+Plain TypeScript + Vite, no framework (matches the old system's no-framework `Index.html`, just
+with real tooling). **This is the one piece of the whole project that's actually been run and
+verified** — `npm install && npm run build` succeeds cleanly (strict `tsc` + Vite bundling), and
+the login screen was smoke-tested in a real browser via a local dev server: form renders, submit
+correctly hits the `pin-login` Edge Function call path, and a network failure (no real Supabase
+project configured) is caught and shown as a friendly error instead of crashing — see the
+screenshot/console check in this session's transcript around the phase 6 work.
+
+**What's built:**
+- `src/lib/supabase.ts` / `session.ts` — the custom-JWT client pattern described in phase 3's
+  README section: no `supabase.auth.setSession()` (no refresh token exists), the authenticated
+  client is rebuilt with the token attached to `Authorization` headers instead.
+- `src/lib/auth.ts` — `login()`/`logout()`, calling the `pin-login` Edge Function and `logout()`
+  RPC respectively.
+- `src/lib/tasks.ts` — task list/detail reads, and the timer/complete/cancel actions from phase
+  2, each generating its own `operation_id` client-side (`crypto.randomUUID()`) for idempotent
+  retries.
+- Three screens (`src/views/`): login, task list, task detail (timer controls, checklist,
+  complete-with-evidence, cancel-with-reason). A ~40-line hash router (`src/app.ts`) ties them
+  together.
+- **Bug found and fixed while building this, not in the original review:** `task_checklist_items`
+  had a `SELECT` policy from phase 1 but nothing let a client actually check an item off —
+  `create_task()` was the only writer, via `SECURITY DEFINER`. Fixed in
+  `0011_checklist_write_policy.sql` with a direct RLS `UPDATE` policy scoped, at the grant level
+  (not just RLS), to the single `feito` column — `revoke update ... / grant update (feito) ...` —
+  so the policy can't be used to rewrite an item's text.
+
+**What's explicitly NOT built yet (this is a big gap, not a rounding error):**
+- **No local-first outbox/queue.** This was the old system's headline architectural property
+  ("toda ação do usuário entra na fila local antes de depender da rede" — see
+  `SGO_Supabase_Migration_Prompt.md` section 2.8) and this frontend does not have it: actions are
+  plain call-and-await against the network. A dropped connection mid-action currently just fails
+  the action, it doesn't queue it. Rebuilding that (local queue, retry/backoff, conflict
+  handling) is real, substantial work — don't assume it exists.
+- No chat UI, no notification center UI, no task-creation form, no admin/template-management
+  screens, no diagnostics view. Only "view my tasks, act on one task" exists.
+- No `supabase gen types` — `src/lib/types.ts` is hand-written and will drift from the real
+  schema the moment migrations change; regenerate it once there's a real project to point at.
+- `npm audit` reports one moderate vulnerability (`esbuild`, via Vite) affecting Vite's **dev
+  server only** (not production `dist/` output) — present in the entire Vite 5.x/6.x line, only
+  fixed by jumping to Vite 8, which is a breaking change not attempted here. Accepted as a known
+  risk for now; revisit before this is used somewhere the dev server itself is exposed.
+
 ## Not started yet
 
-- **Phase 6 — frontend.** Nothing under `src/` yet.
 - **Phase 7 — diagnostics/admin tooling.** Not started.
 
 ## Open questions / things to verify before relying on this schema
