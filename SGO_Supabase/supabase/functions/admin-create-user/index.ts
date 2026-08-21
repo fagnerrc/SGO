@@ -56,13 +56,25 @@ Deno.serve(async (req: Request) => {
     return json({ success: false, errorCode: "FORBIDDEN" }, 403);
   }
 
-  let body: { email?: string; full_name?: string; role?: string; area?: string; company_id?: string };
+  // The new user's company is always the CALLER's own company, never a
+  // client-supplied value — is_privileged() above only proves the caller is
+  // privileged *somewhere*, not that they have any authority over whatever
+  // company_id a request body might name. Without this, a privileged admin
+  // of Company A could provision a user directly into Company B just by
+  // passing its id.
+  const { data: callerCompanyId, error: companyError } = await callerClient.rpc("current_company");
+  if (companyError || !callerCompanyId) {
+    console.error("current_company RPC error", companyError);
+    return json({ success: false, errorCode: "SERVER_ERROR" }, 500);
+  }
+
+  let body: { email?: string; full_name?: string; role?: string; area?: string };
   try {
     body = await req.json();
   } catch {
     return json({ success: false, errorCode: "INVALID_BODY" }, 400);
   }
-  if (!body.email || !body.full_name || !body.company_id) {
+  if (!body.email || !body.full_name) {
     return json({ success: false, errorCode: "MISSING_FIELDS" }, 400);
   }
 
@@ -75,7 +87,7 @@ Deno.serve(async (req: Request) => {
       full_name: body.full_name,
       role: body.role ?? "colaborador",
       area: body.area ?? "",
-      company_id: body.company_id,
+      company_id: callerCompanyId,
     },
   });
   if (createError || !created?.user) {

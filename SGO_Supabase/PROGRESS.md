@@ -243,14 +243,60 @@ run these migrations against a real Supabase project and see what breaks — not
 project has executed against a live Postgres instance except the frontend's own build step.
 Treat every phase's "done" as "designed and internally consistent," not "verified."
 
+## Validation pass (after phase 7) — what was actually checked, and two real bugs it found
+
+No Docker/psql/Supabase CLI/Deno available in this environment, so a real Postgres instance was
+still not reachable — but two things were validated for real, not just read by eye:
+
+1. **All 13 migration files parsed successfully with `libpg-query`** (a Node wrapper around the
+   actual Postgres SQL parser) — confirms every `CREATE TABLE`/`CREATE FUNCTION`/`CREATE POLICY`/
+   `GRANT`/`REVOKE`/etc. statement is syntactically valid SQL. This does **not** validate PL/pgSQL
+   function *bodies* (those are opaque string literals to the outer parser — a typo inside a
+   `BEGIN...END` block wouldn't be caught this way) or any semantic/runtime behavior — only that
+   nothing is malformed at the statement level.
+2. **Every `GRANT`/`REVOKE EXECUTE` statement's argument-type list was cross-checked against the
+   actual function signature it targets**, across all 13 files (30 functions checked by hand,
+   grant-list vs. `create function` line) — all matched exactly. A mismatch here would make
+   `supabase db push` fail outright (Postgres can't resolve which overload a `GRANT` refers to),
+   so this specifically catches "I renamed/reordered a parameter and forgot to update the grant"
+   mistakes before they'd surface as a deploy failure.
+3. **Every `task_status` string literal used anywhere across all migrations** (comparisons,
+   trigger arrays, generated notifications) was extracted and diffed against the 7 real enum
+   values from `0001` — all matched exactly, no typos/accent mismatches that would otherwise only
+   surface as a runtime "invalid input value for enum" error.
+
+**Two real bugs found and fixed by this pass, not by the original code review:**
+
+- **`0013_function_grants_hardening.sql`** — Postgres grants `EXECUTE` on every new function to
+  `PUBLIC` by default unless explicitly revoked. Every earlier migration's comments *assumed*
+  "I never explicitly granted this, so clients can't call it" — that assumption was wrong.
+  `claim_operation()`/`complete_operation()`/`fail_operation()` (0007) were, until this migration,
+  directly callable by any authenticated client — meaning anyone could forge a `COMPLETED` result
+  for *someone else's* `operation_id`, or mark it `FAILED`, bypassing the whole point of the
+  idempotency ledger. `generate_daily_tasks()`/`generate_deadline_notifications()` (0010) were
+  triggerable on demand instead of pg_cron-only, as documented but not enforced. Also revoked
+  (lower risk, but not meant to be public either): `lock_task()`, `lock_task_for_approval()`,
+  `can_mutate_task()`, `task_summary()`, `can_view_conversation()`. The RLS helper functions
+  (`current_profile`/`current_company`/`is_privileged`/etc.) are deliberately left alone — RLS
+  policies invoke them as the querying role, so revoking would break every policy that uses them;
+  being directly callable is harmless for those specifically since each only reports information
+  about the caller's own session.
+- **`admin-create-user`** accepted `company_id` from the request body and only checked that the
+  *caller* was privileged somewhere — not that they had any authority over the specific company
+  they were asking to provision a user into. A privileged admin of Company A could have provisioned
+  a user directly into Company B just by naming its id. Fixed: the function now derives the
+  target company from the caller's own `current_company()` via RPC, ignoring any client-supplied
+  value entirely.
+
 ## Open questions / things to verify before relying on this schema
 
-1. **Untested against a real Postgres/Supabase instance — still the #1 item.** All twelve
-   migrations (0001-0012) and five Edge Functions were written by reading the code by eye; none
-   have been run with `supabase db push`/`supabase functions deploy`, or against a local
-   Supabase instance, yet (the frontend build is the one exception — see phase 6). Before
-   trusting any of this, run the migrations against a throwaway project and fix whatever the
-   first `db push` surfaces. Likely candidates: exact array/`ANY` syntax in `0006`'s
+1. **Still not run against a real Postgres/Supabase instance — still the #1 item**, though this
+   is now more precisely scoped than "written by eye": all 13 migrations pass real Postgres SQL
+   parsing and a full grant/signature cross-check (see the validation pass section above), so
+   what's actually unverified is semantic/runtime behavior — PL/pgSQL function bodies, RLS policy
+   *behavior* (not just that the policies parse), and every Edge Function's actual HTTP behavior.
+   Before trusting any of this, run the migrations against a throwaway project and fix whatever
+   the first `db push` surfaces. Likely candidates: exact array/`ANY` syntax in `0006`'s
    `company_access` checks; whether `pg_cron` is available on your Supabase plan (needs enabling
    in the dashboard first); in `0007`'s `update_task()`, the
    `jsonb_array_elements_text(...)::uuid`/`::text` casts used to turn a JSON array into
