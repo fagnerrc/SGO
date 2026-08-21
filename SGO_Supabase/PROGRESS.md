@@ -66,11 +66,66 @@ clean, unbootstrapped state.
 question #7 below, which had flagged pg_cron behavior on Supabase's managed Postgres as
 unverified.
 
-**Still not verified even after all this:** the actual task-mutation flow (`create_task` through
-`complete_task`), chat, notifications firing, and the daily-generation/deadline-notification
-functions' *content* (only that they're scheduled, not that a real run produces correct
-output) — this session tested auth end-to-end because that's the foundation everything else
-sits on, not because the rest is assumed fine. Test those before relying on them.
+## FUNCTIONAL TEST SUITE — task/chat/notifications/automation, end-to-end (2026-08-21)
+
+Follow-up to the auth-only validation above. Wrote a 55-assertion test script
+(not committed — lived in the session's scratchpad, reproducible from this description) that
+drives the real deployed system as four real users (admin, gestor, colaborador, an aprovador in
+a different area) through `pin-login` and the REST/RPC API, the same way the eventual frontend
+will. **All 55 passed on the final run.** It found **4 more real bugs** first — none of which
+the earlier SQL-parser/advisor-driven validation pass could have caught, because all four are
+about runtime *behavior* under real multi-user data, not schema/grant correctness:
+
+1. **`infinite recursion detected in policy for relation "profiles"` (42P17)** — `profiles_select`
+   (0006) contained `select unnest(company_access) from profiles where id = auth.uid()`: a plain
+   subquery against `profiles`, evaluated as the querying role, inside `profiles`' own policy.
+   Every row that subquery touches needs `profiles_select` evaluated on it too — forever. Never
+   triggered by the auth-flow validation (which only ever called `current_profile()`, a
+   SECURITY DEFINER function that bypasses RLS on its internal lookup) — only surfaced once a
+   test actually queried `task_checklist_items`, which checks `tasks_select`, which checks
+   `profiles` for the gestor-of-area clause. Fixed (`0023`) with a SECURITY DEFINER
+   `caller_company_access()` helper, same pattern as `current_company()`.
+2. **The identical bug, two tables apart** — `conversations_select`'s 'direct' clause queries
+   `conversation_participants`; `conversation_participants_select`'s fallback clause queried
+   `conversations` right back. Only surfaced when a message was actually sent. Fixed (`0024`)
+   with a `my_conversation_ids()` SECURITY DEFINER helper, same pattern again — worth noting
+   as a category, not just two isolated bugs: **any RLS policy with a plain subquery against a
+   table whose own policy queries back (directly or transitively) will do this**, and the fix is
+   always the same shape.
+3. **`task_checklist_items_update`'s policy called `can_mutate_task()` directly** — that function
+   had been revoked from `authenticated` in `0013`/`0016` as "internal, not meant to be called
+   directly," which was true for every other place it's used (inside other SECURITY DEFINER
+   functions) but wrong here specifically: an RLS policy invoking a function directly needs that
+   function grantable to the querying role, exactly like `current_company()`/`is_privileged()`.
+   Fixed (`0024`) by re-granting it — a reminder that "not granted anywhere in a GRANT statement"
+   isn't the same question as "not used directly in a policy," and the lockdown passes earlier
+   only checked the former.
+4. **`approval_wait_task()` never set `aguardando_quem`, and the `tasks_waiting_fields_required`
+   CHECK constraint required it for `'Aguardando aprovação'` too**, not just
+   `'Aguardando terceiro'` — every real approval-wait attempt failed outright. The two "waiting"
+   states aren't actually the same shape: `Aguardando terceiro` needs a free-text name (no
+   structured link to who), `Aguardando aprovação` already has one (the process's
+   `aprovador_id`) and never needed the free-text field. Split into two constraints (`0024`).
+
+**What the 55 passing assertions now confirm, specifically:** the full task lifecycle
+(create → checklist gating → complete, terminal-state protection against restarting a completed
+task, cancel requiring a reason, update_task's guarded-field rejection); the approval flow
+end-to-end including an approver in a *different area* seeing and acting on the task via the
+approver-specific RLS clause from phase 2; `reject_task` as the only path to
+`'Reprovada/devolvida'`; direct and task-linked chat with automatic `MESSAGE_RECEIVED`/
+`TASK_MESSAGE`/`MENTION` notifications; feedback triggering `FEEDBACK_RECEIVED`; admin company
+settings, client-error reporting, and — confirmed precisely — that deactivating a collaborator
+revokes their session *immediately* (the first test run's assumption that it didn't was itself
+wrong, caught by tightening the assertion rather than trusting a 200 status code alone); a
+recurring task template actually producing a real task when `generate_daily_tasks()` runs; and
+deadline notifications firing for a real overdue task, with the day-bucket dedup confirmed to
+not duplicate on a second run. Database returned to a clean, empty (unbootstrapped) state
+afterward.
+
+**Still genuinely unverified:** timer state machine specifics (`start_task`/`pause_task`/
+`resume_task` duration accumulation — the test suite only exercised non-timed tasks), the
+frontend (`SGO_Supabase/src/`) against this live project (never pointed at a real
+`.env.local`), and anything not explicitly listed above.
 
 ## Done — Phase 1: schema + RLS
 
