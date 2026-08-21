@@ -345,6 +345,22 @@ deleted afterward; the real `fagner@gmail.com` admin account, `taina@gmail.com` 
 collaborator the user had already added independently), and a real "Teste" task the user created
 themselves while trying out the site were all left untouched.
 
+**One more real bug, found only because the production deploy was re-checked after going
+live:** the production site got stuck forever on "Carregando..." for a stale/invalidated
+session, with an uncaught `TypeError: Cannot read properties of null (reading 'split')`.
+Root cause: `current_profile()` (`0002_core_tables.sql`/`0008_auth_functions.sql`) is declared
+`returns profiles` (a single row, not `setof`) — when its `where id = auth.uid() and
+session_is_valid()` matches nothing, Postgres doesn't return "no rows", it returns **one row
+where every column is null**, which PostgREST forwards as a 200 with an all-null object. The
+frontend treated that truthy-but-empty object as a real profile and crashed computing avatar
+initials from a null `full_name`. Any user whose session goes stale while the tab is still open
+(PIN reset elsewhere, deactivation) would have hit this. Fixed in two places: `getMyProfile()`
+(`src/lib/profiles.ts`) now checks `data?.id` and throws a clear `SGO_SESSION_INVALID` error
+instead of trusting the shape; `renderNav()` (`src/views/nav.ts`) now specifically catches that
+error, clears the local session, and redirects to `#/login`, instead of silently rendering a
+profile-less shell. Reproduced with the exact stale JWT via a direct RPC call before writing the
+fix, and confirmed fixed the same way afterward.
+
 ## Done — Phase 1: schema + RLS
 
 All in `supabase/migrations/`:

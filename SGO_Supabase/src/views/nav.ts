@@ -1,5 +1,6 @@
 import { logout } from "../lib/auth";
 import { getMyProfile } from "../lib/profiles";
+import { clearSession } from "../lib/session";
 import type { Profile } from "../lib/types";
 
 export type PageKey = "dashboard" | "tasks" | "kanban" | "approvals" | "collaborators";
@@ -34,9 +35,18 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
   let profile: Profile | null = null;
   try {
     profile = await getCachedProfile();
-  } catch {
-    // RLS/session hiccup — still render the nav without role-gated links
-    // rather than block the whole page on it.
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("SGO_SESSION_INVALID")) {
+      // The stored token no longer maps to a live session (PIN reset,
+      // deactivation, or the profile itself was removed elsewhere) —
+      // without this, the page would otherwise render as an empty,
+      // profile-less shell instead of sending the person back to log in.
+      clearSession();
+      location.hash = "#/login";
+      return;
+    }
+    // Any other error here is a transient hiccup — still render the nav
+    // without role-gated links rather than block the whole page on it.
   }
 
   const isPrivileged = Boolean(profile && PRIVILEGED_ROLES.has(profile.role));

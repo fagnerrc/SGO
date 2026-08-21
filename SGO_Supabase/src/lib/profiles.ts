@@ -27,6 +27,14 @@ export async function adminListProfiles(): Promise<Profile[]> {
 export async function getMyProfile(): Promise<Profile> {
   const { data, error } = await getClient().rpc("current_profile");
   if (error) throwSupabaseError(error);
+  // current_profile() is `returns profiles` (a single row, not `setof`) —
+  // when the session is valid but doesn't match any profile (revoked,
+  // deleted), Postgres doesn't return "no rows", it returns one row with
+  // every column null. PostgREST forwards that as a 200 with an all-null
+  // object, which would otherwise be mistaken for a real (if odd) profile.
+  if (!data?.id) {
+    throw new Error("SGO_SESSION_INVALID: sessão inválida ou expirada");
+  }
   return data as Profile;
 }
 
