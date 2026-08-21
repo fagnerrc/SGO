@@ -1004,6 +1004,51 @@ a {
 }
 
 /* ---------------------------------------------------------------- */
+/* Tabs (Meu trabalho)                                                */
+/* ---------------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  margin-bottom: 1.1rem;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.tab {
+  padding: 0.5rem 0.9rem;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab.active {
+  color: #fff;
+  background: var(--primary);
+}
+.tab-count {
+  font-size: 0.7rem;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--muted);
+}
+.tab.active .tab-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------- */
 /* Filter toolbar (Tarefas / Kanban)                                  */
 /* ---------------------------------------------------------------- */
 

@@ -7,7 +7,7 @@ import { listMyTasks } from "../lib/tasks";
 import type { Profile, Task } from "../lib/types";
 import { initials } from "./badges";
 
-export type PageKey = "dashboard" | "tasks" | "kanban" | "approvals" | "collaborators" | "processes" | "settings";
+export type PageKey = "dashboard" | "mywork" | "tasks" | "kanban" | "approvals" | "collaborators" | "processes" | "settings";
 
 const PRIVILEGED_ROLES = new Set(["admin", "diretoria", "auditoria"]);
 
@@ -30,6 +30,8 @@ let searchTasksPromise: Promise<Task[]> | null = null;
 const ICONS: Record<PageKey, string> = {
   dashboard:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>',
+  mywork:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   tasks:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   kanban:
@@ -78,6 +80,7 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
 
   const links: { key: PageKey; label: string; href: string }[] = [
     { key: "dashboard", label: "Dashboard", href: "#/dashboard" },
+    { key: "mywork", label: "Meu trabalho", href: "#/mywork" },
     { key: "tasks", label: "Tarefas", href: "#/tasks" },
     { key: "kanban", label: "Kanban", href: "#/kanban" },
     { key: "approvals", label: "Aprovações", href: "#/approvals" },

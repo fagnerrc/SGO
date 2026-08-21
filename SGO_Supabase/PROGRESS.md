@@ -422,6 +422,21 @@ processo e confirmei os campos preenchidos automaticamente na tela, enviei o for
 verifiquei direto no banco que a tarefa criada tinha `area`, `risco`, `process_id` e os itens de
 checklist corretos. Processo e tarefa de teste apagados depois.
 
+### Parte 3 — Tela "Meu trabalho" ✅
+
+`src/lib/myWork.ts`: `bucketMyWork(tasks, myProfileId)`, pura, particiona a lista já buscada por
+`listMyTasks()` em 5 grupos (hoje e atrasadas, próximas, aguardando, devolvidas, concluídas) —
+mas primeiro filtra para só tarefas onde a pessoa é responsável ou participante, porque
+`listMyTasks()` (via RLS) pode devolver mais do que isso (ex.: um gestor vê a área inteira), o que
+é certo pra tela de Tarefas mas largo demais pra "o que é meu de verdade". Cancelada fica de fora
+de todas as abas. `src/views/myWork.ts`: interface de abas (`.tabs`/`.tab`, novo em `style.css`)
+reaproveitando o mesmo card de tarefa e os badges já existentes. Rota `#/mywork`, link "Meu
+trabalho" na sidebar logo depois de Dashboard.
+
+Testado no navegador contra a conta real: a única tarefa existente ("Teste", em "Aguardando
+aprovação") apareceu corretamente na aba Aguardando com contador 1 e nas demais abas com 0, e o
+clique no card navegou certo para o detalhe da tarefa.
+
 ## VISUAL REDESIGN v2 — configurable branding + real charts (2026-08-21)
 
 The first visual pass (dark green sidebar) didn't land — "do jeito que ficou foi muito ruim". The
