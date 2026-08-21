@@ -80,11 +80,101 @@ button {
   margin-bottom: 1.25rem;
 }
 
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app-header-actions button:not(.link-button) {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+}
+
 .link-button {
   background: none;
   border: none;
   color: var(--brand);
   padding: 0;
+}
+
+.task-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.task-form input,
+.task-form select,
+.task-form textarea {
+  width: 100%;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  margin-bottom: 0.6rem;
+  background: var(--card);
+  color: var(--text);
+}
+
+.task-form label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.task-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.checklist-builder {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.checklist-builder li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+
+.checklist-add-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.checklist-add-row input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.checklist-add-row button {
+  padding: 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.task-form button[type="submit"] {
+  padding: 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 600;
 }
 
 .task-list {

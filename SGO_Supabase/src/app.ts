@@ -2,8 +2,9 @@ import { loadSession } from "./lib/session";
 import { renderLogin } from "./views/login";
 import { renderTaskList } from "./views/taskList";
 import { renderTaskDetail } from "./views/taskDetail";
+import { renderTaskCreate } from "./views/taskCreate";
 
-// Deliberately minimal hash router — #/login, #/tasks, #/tasks/:id.
+// Deliberately minimal hash router — #/login, #/tasks, #/tasks/new, #/tasks/:id.
 // No SPA framework, matching the old system's plain-JS approach (see
 // SGO_Supabase_Migration_Prompt.md section 3); a proper router/state
 // layer is a fine thing to add once there's more than three screens.
@@ -30,6 +31,19 @@ function route(root: HTMLElement): void {
     renderLogin(root, () => {
       location.hash = "#/tasks";
     });
+    return;
+  }
+
+  if (hash === "#/tasks/new") {
+    renderTaskCreate(
+      root,
+      (taskId) => {
+        location.hash = `#/tasks/${taskId}`;
+      },
+      () => {
+        location.hash = "#/tasks";
+      },
+    );
     return;
   }
 

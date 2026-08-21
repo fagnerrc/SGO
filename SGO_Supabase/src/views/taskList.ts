@@ -25,11 +25,18 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
     <div class="app-shell">
       <header class="app-header">
         <h1>Minhas tarefas</h1>
-        <button id="logout-btn" class="link-button">Sair</button>
+        <div class="app-header-actions">
+          <button id="new-task-btn">+ Nova tarefa</button>
+          <button id="logout-btn" class="link-button">Sair</button>
+        </div>
       </header>
       <div id="task-list" class="task-list">Carregando...</div>
     </div>
   `;
+
+  root.querySelector("#new-task-btn")!.addEventListener("click", () => {
+    location.hash = "#/tasks/new";
+  });
 
   root.querySelector("#logout-btn")!.addEventListener("click", async () => {
     await logout();

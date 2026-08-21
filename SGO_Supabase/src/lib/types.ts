@@ -1,8 +1,8 @@
 // Mirrors the enums/columns from supabase/migrations/0003_tasks.sql. Kept
-// hand-written for now rather than generated (`supabase gen types`) since
-// there's no live project to generate against yet — regenerate this once
-// phase 1's migrations have actually been applied somewhere (see
-// PROGRESS.md open question #1).
+// hand-written rather than generated (`supabase gen types`) — the schema
+// has now actually been applied to a real project (see PROGRESS.md's LIVE
+// VALIDATION sections), so generating this for real is a reasonable
+// follow-up, just not done yet.
 
 export type TaskStatus =
   | "Em andamento"
@@ -49,4 +49,13 @@ export interface ChecklistItem {
   texto: string;
   feito: boolean;
   position: number;
+}
+
+export interface Profile {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  area: string;
+  active: boolean;
 }

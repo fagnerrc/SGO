@@ -173,7 +173,30 @@ determined whether a bug was even reachable:
 
 **Still not exercised through the browser:** the timer UI buttons specifically (start/pause/
 resume — the completion flow above used a non-timed task), and everything not built yet per the
-phase 6 gaps list (chat UI, notifications UI, admin UI, task creation form, local-first outbox).
+phase 6 gaps list (chat UI, notifications UI, admin UI, local-first outbox).
+
+## TASK CREATION SCREEN — built and tested through a real browser (2026-08-21)
+
+The single hardest blocker to anyone actually using this system: there was no way to create a
+task from the UI at all, only to act on tasks created via the API. Built `src/views/taskCreate.ts`
+(title/description/area/tipo/prazo/estimativa/prioridade/risco, a responsável picker sourced from
+a real `listCompanyProfiles()` query against `profiles`, and a dynamic add/remove checklist
+builder) plus `createTask()` in `src/lib/tasks.ts` and the `#/tasks/new` route. Tested by actually
+clicking through it in a browser against the live project: filled every field, added two checklist
+items, submitted, landed on the new task's detail page, and confirmed directly in the database
+that every field (`code`, `titulo`, `area`, `tipo`, `prioridade`, `risco`, `estimativa`) persisted
+exactly as entered.
+
+Two things that looked like bugs during this test turned out to be artifacts of the **browser
+automation tool** used to drive the test, not the product — worth recording so a future session
+doesn't waste time chasing them again: (1) a synthetic "press Enter" action didn't trigger the
+checklist input's `keydown` listener, but dispatching a real `KeyboardEvent('keydown', {key:
+'Enter'})` via `element.dispatchEvent()` fired it correctly — confirmed the listener code itself
+is right, a real keyboard's Enter key behaves like the dispatched event, not like the automation
+tool's synthetic key action. (2) Typing text containing a Portuguese accented character
+("relatório") into a field once left it empty — worked fine immediately after with an
+unaccented string, and again when set via `dispatchEvent`. Neither should recur when a real
+person uses a real keyboard.
 
 ## Done — Phase 1: schema + RLS
 
@@ -347,9 +370,11 @@ screenshot/console check in this session's transcript around the phase 6 work.
 - `src/lib/tasks.ts` — task list/detail reads, and the timer/complete/cancel actions from phase
   2, each generating its own `operation_id` client-side (`crypto.randomUUID()`) for idempotent
   retries.
-- Three screens (`src/views/`): login, task list, task detail (timer controls, checklist,
-  complete-with-evidence, cancel-with-reason). A ~40-line hash router (`src/app.ts`) ties them
-  together.
+- Four screens (`src/views/`): login, task list, **task creation** (added 2026-08-21 — title,
+  description, area, tipo, responsável picked from a real `listCompanyProfiles()` query, prazo,
+  estimativa, prioridade, risco, and a dynamic add/remove checklist builder), task detail (timer
+  controls, checklist, complete-with-evidence, cancel-with-reason). A ~50-line hash router
+  (`src/app.ts`) ties them together, including `#/tasks/new`.
 - **Bug found and fixed while building this, not in the original review:** `task_checklist_items`
   had a `SELECT` policy from phase 1 but nothing let a client actually check an item off —
   `create_task()` was the only writer, via `SECURITY DEFINER`. Fixed in
@@ -364,8 +389,9 @@ screenshot/console check in this session's transcript around the phase 6 work.
   plain call-and-await against the network. A dropped connection mid-action currently just fails
   the action, it doesn't queue it. Rebuilding that (local queue, retry/backoff, conflict
   handling) is real, substantial work — don't assume it exists.
-- No chat UI, no notification center UI, no task-creation form, no admin/template-management
-  screens, no diagnostics view. Only "view my tasks, act on one task" exists.
+- No chat UI, no notification center UI, no admin/template-management screens, no diagnostics
+  view. Task creation is now covered (see above); everything else is still "view my tasks, act
+  on one task, create a task."
 - No `supabase gen types` — `src/lib/types.ts` is hand-written and will drift from the real
   schema the moment migrations change; regenerate it once there's a real project to point at.
 - `npm audit` reports one moderate vulnerability (`esbuild`, via Vite) affecting Vite's **dev

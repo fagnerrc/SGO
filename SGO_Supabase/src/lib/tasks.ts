@@ -62,11 +62,39 @@ export const cancelTask = (taskId: string, motivo: string) =>
   callAction("cancel_task", { p_task_id: taskId, p_operation_id: newOperationId(), p_motivo: motivo });
 
 export async function toggleChecklistItem(itemId: string, done: boolean): Promise<void> {
-  // Direct table update, not an RPC: task_checklist_items has no write
-  // policy in 0006/0007 yet (create_task() is the only writer so far) —
-  // this call will fail against RLS until that's added. Flagged in
-  // PROGRESS.md; left in place so the UI shape is right even though the
-  // backend piece for it isn't wired up yet.
+  // Direct table update, not an RPC — task_checklist_items_update (0011)
+  // is a simple RLS policy scoped, at the grant level, to just this one
+  // column (see 0011's comment for why). Verified working end-to-end
+  // through this exact code path in a real browser (PROGRESS.md).
   const { error } = await getClient().from("task_checklist_items").update({ feito: done }).eq("id", itemId);
   if (error) throw error;
+}
+
+export interface NewTaskInput {
+  titulo: string;
+  area: string;
+  responsavelId: string;
+  descricao?: string;
+  tipo?: string;
+  prazo?: string; // ISO datetime, from a <input type="datetime-local">
+  estimativa?: number;
+  prioridade?: string;
+  risco?: string;
+  checklist?: string[];
+}
+
+export async function createTask(input: NewTaskInput): Promise<{ id: string }> {
+  return callAction("create_task", {
+    p_operation_id: newOperationId(),
+    p_titulo: input.titulo,
+    p_area: input.area,
+    p_responsavel_id: input.responsavelId,
+    p_descricao: input.descricao ?? "",
+    p_tipo: input.tipo ?? "Demanda operacional",
+    p_prazo: input.prazo ? new Date(input.prazo).toISOString() : null,
+    p_estimativa: input.estimativa ?? 0,
+    p_prioridade: input.prioridade ?? "Normal",
+    p_risco: input.risco ?? "Baixo",
+    p_checklist: input.checklist ?? [],
+  });
 }
