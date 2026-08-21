@@ -1,0 +1,59 @@
+name: Deploy SGO Supabase frontend to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "SGO_Supabase/**"
+      - ".github/workflows/deploy-frontend.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: SGO_Supabase/package-lock.json
+
+      - name: Install dependencies
+        working-directory: SGO_Supabase
+        run: npm ci
+
+      - name: Build
+        working-directory: SGO_Supabase
+        env:
+          # Safe to bake into the public bundle: the anon key is designed
+          # to be client-visible, Row Level Security is what actually
+          # protects data (see README "Design decisions"). Set as repo
+          # secrets so the real project URL isn't hardcoded in this file.
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: SGO_Supabase/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
