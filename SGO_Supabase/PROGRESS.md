@@ -71,11 +71,47 @@ approving a request from another team) from approving or even seeing the task. F
 (2) added an approver clause to the `tasks_select` RLS policy in `0006_rls_policies.sql` so the
 approver can actually see the task in the first place. Both changes are in this commit.
 
+## Done — Phase 3: auth
+
+**`0008_auth_functions.sql`** + **`supabase/functions/pin-login/`** + **`supabase/functions/admin-create-user/`**.
+
+Decision made on the "custom JWT vs. Supabase Auth" question left open after phase 1: PIN
+verification and lockout accounting happen in Postgres (`verify_login()`), but the actual
+session token is a **self-signed, Supabase-compatible JWT** (HS256, project JWT secret) minted
+by the `pin-login` Edge Function — Postgres can't sign JWTs itself, and using Supabase Auth's
+own sign-in methods would mean giving up PIN as the credential. This is Supabase's documented
+"bring your own auth" pattern: the JWT works directly with PostgREST/RLS (`auth.uid()` resolves
+from its `sub` claim) for both plain `SELECT`s and the phase 2 RPC functions — one token, no
+separate session concept to keep in sync.
+
+- **`verify_login(email, pin)`** — lockout check, `crypt()` (bcrypt via pgcrypto) hash
+  comparison, attempt accounting, all inside one transaction serialized per-email via
+  `pg_advisory_xact_lock(hashtext(email))`. This closes the *original* race-condition bug this
+  whole review started from (parallel PIN attempts reading the same counter before either
+  writes back) at the root, not by bolting a lock onto a check that still wasn't atomic.
+- **No hidden TTL on lockouts** (fixes bug #2) — `login_attempts.locked_until` is read and
+  compared directly; nothing else expires the row early. Lockout duration/attempt threshold are
+  now per-company config (`companies.login_max_attempts`/`login_lockout_minutes`, added by this
+  migration), not hardcoded.
+- **`session_is_valid()`** — every RLS helper (`current_profile`/`current_user_role`/
+  `current_company`/`is_privileged`) now also checks that the JWT's `session_id` claim points at
+  a non-revoked, non-expired row in `sessions`. **`set_pin()`** calls `revoke_sessions_for()`
+  (already built in phase 1) on every PIN change — self-service or admin reset — so a reset
+  invalidates existing sessions *immediately*, on the very next request, not just for future
+  logins. This fixes bug #1 for real, not just at the login layer.
+- **`credentials`** — split out from `profiles` on purpose: `profiles` is broadly readable
+  within a company (phase 1 RLS), and `pin_hash` must never ride along with that. RLS-enabled,
+  zero policies — only reachable through `SECURITY DEFINER` functions.
+- **`handle_new_auth_user()`** trigger — the standard Supabase pattern for keeping `profiles` in
+  sync with `auth.users`; fires when `admin-create-user` calls the Admin API to create the
+  underlying auth user, using `raw_user_meta_data` to fill in role/area/company.
+- Design correction recorded in `0008`: the `sessions.token_hash`/`validate_session()` mechanism
+  from phase 1 (0005) assumed an opaque-token model that didn't survive contact with "Postgres
+  can't sign JWTs" — `token_hash` is now nullable and unused; `session_is_valid()`/
+  `current_session_id()` are the real mechanism going forward.
+
 ## Not started yet
 
-- **Phase 3 — auth.** A PIN-login Edge Function using `login_attempts`/`sessions` (schema is
-  ready; no function code yet). Decide: custom JWT vs. Supabase Auth admin API to mint a real
-  session on successful PIN check.
 - **Phase 4 — comms functions.** Server-side notification creation actually wired to task/
   feedback/message events (fixing bug #6 — the old function existed but was never called).
   Schema (`notifications`) is ready; the trigger/function that populates it on
@@ -87,15 +123,29 @@ approver can actually see the task in the first place. Both changes are in this 
 
 ## Open questions / things to verify before relying on this schema
 
-1. **Untested against a real Postgres/Supabase instance.** All seven migrations (0001-0007)
-   were written by reading the SQL by eye; none have been run with `supabase db push` or against
-   a local Supabase instance yet. Before building a frontend on top of them, run them against a
-   throwaway project and fix whatever the first `db push` surfaces. Likely candidates: exact
-   array/`ANY` syntax in `0006`'s `company_access` checks; whether `pg_cron` is available on your
-   Supabase plan (needs enabling in the dashboard first); and in `0007`'s `update_task()`, the
+1. **Untested against a real Postgres/Supabase instance.** All eight migrations (0001-0008) and
+   both Edge Functions were written by reading the code by eye; none have been run with
+   `supabase db push`/`supabase functions deploy`, or against a local Supabase instance, yet.
+   Before building a frontend on top of them, run them against a throwaway project and fix
+   whatever the first `db push`/`functions serve` surfaces. Likely candidates: exact array/`ANY`
+   syntax in `0006`'s `company_access` checks; whether `pg_cron` is available on your Supabase
+   plan (needs enabling in the dashboard first); in `0007`'s `update_task()`, the
    `jsonb_array_elements_text(...)::uuid`/`::text` casts used to turn a JSON array into
-   `participantes uuid[]`/`tags text[]` — these are standard Postgres but haven't been exercised
-   against a real call.
+   `participantes uuid[]`/`tags text[]`; and in `0008`, whether creating a trigger on `auth.users`
+   is permitted under your project's role setup (it's the standard documented Supabase pattern,
+   but depends on the migration being run as a role with the right privileges on the `auth`
+   schema — usually true for the `postgres` role `supabase db push` uses by default).
+2. **First-user bootstrap has no path yet.** `admin-create-user` requires the *caller* to already
+   be `is_privileged()` — which is correct for provisioning the 2nd, 3rd, ... user, but means
+   there is currently no way to create the very first company/admin from a blank database. Needs
+   either: a one-time SQL script run directly by the project owner (bypassing the Edge Function)
+   to insert the first `companies` row and manually create+promote one `auth.users`/`profiles`
+   row to `role = 'admin'`, or a dedicated `bootstrap_company()` function that only works when
+   the `companies` table is empty. Not designed yet — flagging so it isn't a surprise when
+   someone tries to log into a fresh project and there's no account to log in with.
+3. **No `create_company()` / company-settings functions yet.** The `companies` table (with the
+   phase 3 lockout columns) can currently only be written to directly with the service role —
+   there's no RPC for an admin to edit their own company's settings (e.g. `login_max_attempts`).
 2. **`risco`/`prioridade` are plain text, not enums** — the old source didn't give enough
    confirmed values to enumerate safely; tighten with a `CHECK (... IN (...))` once the real
    value set is confirmed against the old data.

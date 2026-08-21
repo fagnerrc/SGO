@@ -39,6 +39,21 @@ SGO_Supabase/
 4. The migrations have not yet been run against a real Supabase project as part of this
    session — see `PROGRESS.md` for what to double-check first.
 
+## Auth model (phase 3)
+
+Login is still PIN-based, like the original system — not email/password or magic links. Since
+that isn't a native Supabase Auth strategy, `supabase/functions/pin-login/` does the sign-in:
+it calls `verify_login()` (a Postgres function that checks the PIN hash and lockout state), and
+on success signs its own Supabase-compatible JWT using the project's JWT secret. That token
+works directly with every other part of the app (`SELECT`s through RLS, and the phase 2 RPC
+functions) — there's no separate "app session" concept layered on top. A custom `session_id`
+claim in that JWT is checked on every request (`session_is_valid()` in
+`0008_auth_functions.sql`), which is what makes an admin's PIN reset invalidate a user's
+existing session immediately, not just for their next login. `supabase/functions/
+admin-create-user/` provisions a new collaborator (creates the underlying Supabase Auth user +
+an initial temporary PIN) — see `PROGRESS.md` for the current gap around bootstrapping the very
+first user of a brand-new project.
+
 ## Design decisions worth knowing before you read the schema
 
 - **Mutations go through functions, not raw table writes.** For `tasks`, `notifications`,
