@@ -463,6 +463,41 @@ tela e o dock continuou lá, contando; cliquei em "Iniciar tarefa" de novo e con
 sistema recusou criar uma segunda e abriu a que já estava rodando; pausei pelo dock e confirmei
 que ele sumiu (estado correto). Tarefa de teste apagada depois.
 
+### Parte 5 — Toasts + rede de segurança para erros globais ✅
+
+`src/views/toast.ts` (novo): `showToast(message, type)` — pilha de cartões flutuantes no canto
+superior direito (abaixo da topbar, longe do Timer Dock que fica embaixo), com botão de fechar e
+auto-dismiss.
+
+Rede de segurança global em `main.ts`: `window.addEventListener('error', ...)` e
+`'unhandledrejection'` chamam um handler comum que loga o erro técnico no console e mostra um
+toast genérico — com um throttle de 4s pra uma cascata de erros relacionados não disparar vários
+toasts de uma vez. É exatamente a categoria de proteção que teria avisado mais cedo do bug de
+sessão travada corrigido numa rodada anterior (tela presa em "Carregando..." sem nenhum aviso).
+
+Todos os `alert()` do navegador que existiam no app (`collaborators.ts`, `processes.ts`, `nav.ts`)
+viraram toasts — incluindo um aviso que era bloqueante sem necessidade (o "já existe um cronômetro
+rodando" do fluxo rápido, que agora é só um aviso enquanto já navega pra tarefa certa). Adicionei
+confirmação de sucesso (hoje silenciosa) em: trocar perfil e ativar/desativar colaborador,
+ativar/desativar processo, criar/editar processo, aprovar/reprovar tarefa (que também trocou o
+`prompt()` nativo do motivo de reprovação pelo mesmo modal já usado em outros lugares), e mover um
+card no Kanban.
+
+Ajuste correto por acaso: mover um card no Kanban chamava `reload()` mesmo quando a pessoa
+cancelava o modal (ex.: abrir "Concluir tarefa" e fechar sem preencher) — o `perform()` de cada
+transição não tinha como sinalizar "cancelado" pro chamador, então toda tentativa recarregava o
+quadro à toa. Mudei `TransitionDef.perform` para devolver `boolean` (executou ou não), e agora o
+toast/reload só acontecem quando a ação realmente aconteceu.
+
+**Erro de operação nesta rodada, corrigido na hora:** ao testar o toggle de ativar/desativar em
+Colaboradores, cliquei no primeiro botão da tabela sem checar de quem era a linha e desativei a
+conta real do admin (`fagner@gmail.com`) por engano. Reativei o perfil imediatamente — mas
+`set_profile_active(false)` também revoga as sessões da pessoa na hora (`revoke_sessions_for`,
+comportamento correto e intencional, o mesmo usado no fluxo de reset de PIN), então precisei fazer
+login de novo pra continuar testando. Nenhum dado foi perdido; documentando aqui porque é
+exatamente o tipo de engano que vale registrar. Testes seguintes usaram um colaborador descartável
+criado só para isso, apagado no final.
+
 ## VISUAL REDESIGN v2 — configurable branding + real charts (2026-08-21)
 
 The first visual pass (dark green sidebar) didn't land — "do jeito que ficou foi muito ruim". The

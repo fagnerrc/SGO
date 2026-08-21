@@ -1,6 +1,7 @@
 import { adminListProfiles, createCollaborator, setProfileActive, setProfileRole } from "../lib/profiles";
 import type { Profile } from "../lib/types";
 import { renderNav } from "./nav";
+import { toastError, toastSuccess } from "./toast";
 
 const ROLE_LABELS: Record<string, string> = {
   colaborador: "Colaborador",
@@ -133,8 +134,9 @@ async function refreshRows(shell: HTMLDivElement): Promise<void> {
     select.addEventListener("change", async () => {
       try {
         await setProfileRole(select.dataset.profileId!, select.value);
+        toastSuccess("Perfil atualizado.");
       } catch (err) {
-        alert((err as Error).message);
+        toastError((err as Error).message);
         await refreshRows(shell);
       }
     });
@@ -145,9 +147,10 @@ async function refreshRows(shell: HTMLDivElement): Promise<void> {
       const currentlyActive = btn.dataset.active === "true";
       try {
         await setProfileActive(btn.dataset.profileId!, !currentlyActive);
+        toastSuccess(currentlyActive ? "Colaborador desativado." : "Colaborador reativado.");
         await refreshRows(shell);
       } catch (err) {
-        alert((err as Error).message);
+        toastError((err as Error).message);
       }
     });
   });

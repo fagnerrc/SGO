@@ -6,6 +6,7 @@ import { initials, priorityBadge } from "./badges";
 import { renderFilterBar } from "./filterBar";
 import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
+import { toastSuccess } from "./toast";
 
 // All 7 statuses get a column. The other 3 (Concluída/Auditada/Cancelada)
 // are terminal in the database (enforce_task_transition() blocks any
@@ -31,7 +32,10 @@ const TERMINAL: Set<TaskStatus> = new Set(["Concluída", "Auditada", "Cancelada"
 // requires (via a small modal) and then calls it.
 interface TransitionDef {
   target: TaskStatus;
-  perform: (taskId: string) => Promise<unknown>;
+  // Resolves false when the person cancelled the modal (nothing
+  // happened) so the caller can tell that apart from a real success —
+  // otherwise a cancelled move would still show a "moved" toast.
+  perform: (taskId: string) => Promise<boolean>;
 }
 
 function transitionsFor(task: Task): TransitionDef[] {
@@ -49,12 +53,19 @@ function transitionsFor(task: Task): TransitionDef[] {
           ],
           confirmLabel: "Colocar em espera",
         });
-        if (!values) return;
+        if (!values) return false;
         await waitTask(taskId, values.aguardando_quem, values.motivo);
+        return true;
       },
     });
   const addApprovalWait = () =>
-    options.push({ target: "Aguardando aprovação", perform: (taskId) => approvalWaitTask(taskId) });
+    options.push({
+      target: "Aguardando aprovação",
+      perform: async (taskId) => {
+        await approvalWaitTask(taskId);
+        return true;
+      },
+    });
   const addComplete = () =>
     options.push({
       target: "Concluída",
@@ -67,8 +78,9 @@ function transitionsFor(task: Task): TransitionDef[] {
           ],
           confirmLabel: "Concluir",
         });
-        if (!values) return;
+        if (!values) return false;
         await completeTask(taskId, values.evidencia, values.justificativa);
+        return true;
       },
     });
   const addCancel = () =>
@@ -80,11 +92,19 @@ function transitionsFor(task: Task): TransitionDef[] {
           fields: [{ name: "motivo", label: "Motivo do cancelamento", type: "textarea", required: true }],
           confirmLabel: "Cancelar tarefa",
         });
-        if (!values) return;
+        if (!values) return false;
         await cancelTask(taskId, values.motivo);
+        return true;
       },
     });
-  const addResume = () => options.push({ target: "Em andamento", perform: (taskId) => startTask(taskId) });
+  const addResume = () =>
+    options.push({
+      target: "Em andamento",
+      perform: async (taskId) => {
+        await startTask(taskId);
+        return true;
+      },
+    });
   const addReject = () =>
     options.push({
       target: "Reprovada/devolvida",
@@ -95,11 +115,19 @@ function transitionsFor(task: Task): TransitionDef[] {
           fields: [{ name: "motivo", label: "Motivo da reprovação", type: "textarea", required: true }],
           confirmLabel: "Reprovar",
         });
-        if (!values) return;
+        if (!values) return false;
         await rejectTask(taskId, values.motivo);
+        return true;
       },
     });
-  const addAudit = () => options.push({ target: "Auditada", perform: (taskId) => auditTask(taskId) });
+  const addAudit = () =>
+    options.push({
+      target: "Auditada",
+      perform: async (taskId) => {
+        await auditTask(taskId);
+        return true;
+      },
+    });
 
   switch (task.status) {
     case "Em andamento":
@@ -217,8 +245,11 @@ function renderBoard(
     const transition = transitionsFor(task).find((t) => t.target === target);
     if (!transition) return;
     try {
-      await transition.perform(taskId);
-      reload();
+      const executed = await transition.perform(taskId);
+      if (executed) {
+        toastSuccess(`Tarefa movida para "${target}".`);
+        reload();
+      }
     } catch (err) {
       showError(err);
     }

@@ -3,6 +3,7 @@ import { createProcess, listProcesses, setProcessActive, updateProcess, type Pro
 import type { Profile } from "../lib/types";
 import { riskBadge } from "./badges";
 import { renderNav } from "./nav";
+import { toastError, toastSuccess } from "./toast";
 
 const RECORRENCIA_OPTIONS = ["Sem recorrência", "Diária", "Semanal", "Mensal"];
 const RISCO_OPTIONS = ["Baixo", "Médio", "Alto", "Crítico"];
@@ -220,6 +221,7 @@ function renderPage(shell: HTMLDivElement, processes: Process[], profiles: Profi
       };
       if (editing) await updateProcess(editing.id, input);
       else await createProcess(input);
+      toastSuccess(editing ? "Processo atualizado." : "Processo criado.");
       const fresh = await listProcesses();
       renderPage(shell, fresh, profiles, null);
     } catch (err) {
@@ -262,10 +264,11 @@ function renderPage(shell: HTMLDivElement, processes: Process[], profiles: Profi
       const currentlyActive = btn.dataset.active === "true";
       try {
         await setProcessActive(btn.dataset.toggle!, !currentlyActive);
+        toastSuccess(currentlyActive ? "Processo desativado." : "Processo reativado.");
         const fresh = await listProcesses();
         renderPage(shell, fresh, profiles, null);
       } catch (err) {
-        alert(err instanceof Error ? err.message : String(err));
+        toastError(err instanceof Error ? err.message : String(err));
       }
     });
   });

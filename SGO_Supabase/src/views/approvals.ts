@@ -1,7 +1,9 @@
 import { approveTask, listPendingApprovals, rejectTask } from "../lib/tasks";
 import type { Task } from "../lib/types";
 import { priorityBadge } from "./badges";
+import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
+import { toastSuccess } from "./toast";
 
 export async function renderApprovals(root: HTMLElement): Promise<void> {
   root.innerHTML = `<div id="nav-mount"></div><div class="app-shell"><p>Carregando...</p></div>`;
@@ -57,6 +59,7 @@ async function renderList(shell: HTMLDivElement): Promise<void> {
       errorEl.hidden = true;
       try {
         await approveTask(btn.dataset.taskId!);
+        toastSuccess("Tarefa aprovada.");
         await renderList(shell);
       } catch (err) {
         showError(err);
@@ -66,11 +69,16 @@ async function renderList(shell: HTMLDivElement): Promise<void> {
 
   shell.querySelectorAll<HTMLButtonElement>(".reject-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const motivo = prompt("Motivo da reprovação:");
-      if (!motivo) return;
+      const values = await openFormModal({
+        title: "Reprovar tarefa",
+        fields: [{ name: "motivo", label: "Motivo da reprovação", type: "textarea", required: true }],
+        confirmLabel: "Reprovar",
+      });
+      if (!values) return;
       errorEl.hidden = true;
       try {
-        await rejectTask(btn.dataset.taskId!, motivo);
+        await rejectTask(btn.dataset.taskId!, values.motivo);
+        toastSuccess("Tarefa reprovada e devolvida.");
         await renderList(shell);
       } catch (err) {
         showError(err);

@@ -8,6 +8,7 @@ import type { Profile, Task } from "../lib/types";
 import { initials } from "./badges";
 import { openFormModal } from "./modal";
 import { refreshTimerDock } from "./timerDock";
+import { toastError, toastWarning } from "./toast";
 
 export type PageKey = "dashboard" | "mywork" | "tasks" | "kanban" | "approvals" | "collaborators" | "processes" | "settings";
 
@@ -191,7 +192,7 @@ async function quickStartTimer(profile: Profile | null): Promise<void> {
 
   const existing = await getActiveTimerTask(profile.id).catch(() => null);
   if (existing) {
-    alert(`Você já tem um cronômetro rodando em "${existing.titulo}" (${existing.code ?? ""}). Abrindo essa tarefa.`);
+    toastWarning(`Você já tem um cronômetro rodando em "${existing.titulo}" (${existing.code ?? ""}). Abrindo essa tarefa.`);
     location.hash = `#/tasks/${existing.id}`;
     return;
   }
@@ -221,7 +222,7 @@ async function quickStartTimer(profile: Profile | null): Promise<void> {
     await refreshTimerDock();
     location.hash = `#/tasks/${result.id}`;
   } catch (err) {
-    alert(err instanceof Error ? err.message : String(err));
+    toastError(err instanceof Error ? err.message : String(err));
   }
 }
 
