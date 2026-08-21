@@ -15,6 +15,7 @@ config.local.*
 node_modules/
 dist/
 *.tsbuildinfo
+**/supabase/.temp/
 __pycache__/
 *.pyc
 .venv/
