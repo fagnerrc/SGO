@@ -53,6 +53,30 @@ export function resetClientCache(): void {
 // thrown straight from a `{ data, error }` response — every view's error
 // display ends up rendering "[object Object]" instead of the real message.
 // Route every such error through here so callers always get a real Error.
+//
+// Also the diagnostics module's main capture point for API/RPC failures
+// (deliberately NOT importing from ./diagnostics — that module imports
+// this one, and keeping this file leaf-level avoids the cycle). Every
+// SGO_-prefixed message is a deliberate, named business rejection raised
+// by a function in supabase/migrations/ — the calling view already
+// surfaces it as normal form/action feedback, so logging it here would
+// just be noise. Anything else (network failure, an unexpected Postgres
+// error, a PostgREST parsing error) is a real, diagnostics-worthy
+// problem and gets reported best-effort, fire-and-forget.
 export function throwSupabaseError(error: { message: string }): never {
+  if (!error.message.startsWith("SGO_")) {
+    void (async () => {
+      try {
+        await getClient().rpc("report_client_error", {
+          p_message: error.message,
+          p_context: { module: "api", url: location.hash || location.pathname },
+          p_level: "error",
+          p_action: "RPC_FAILED",
+        });
+      } catch {
+        // best-effort — never let the diagnostic write itself become a new error
+      }
+    })();
+  }
   throw new Error(error.message);
 }

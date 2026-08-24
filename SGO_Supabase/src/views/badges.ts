@@ -63,6 +63,22 @@ export function riskBadge(risk: string): string {
   return badge(risk, RISK_COLOR[risk] ?? "gray");
 }
 
+const LEVEL_COLOR: Record<string, string> = {
+  info: "blue",
+  warn: "orange",
+  error: "red",
+};
+
+const LEVEL_LABEL: Record<string, string> = {
+  info: "Info",
+  warn: "Alerta",
+  error: "Erro",
+};
+
+export function levelBadge(level: string): string {
+  return badge(LEVEL_LABEL[level] ?? level, LEVEL_COLOR[level] ?? "gray");
+}
+
 export function initials(name: string): string {
   return name
     .split(/\s+/)

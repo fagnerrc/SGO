@@ -8,6 +8,7 @@ import { renderKanban } from "./views/kanban";
 import { renderApprovals } from "./views/approvals";
 import { renderAudit } from "./views/audit";
 import { renderReports } from "./views/reports";
+import { renderDiagnostics } from "./views/diagnostics";
 import { renderCollaborators } from "./views/collaborators";
 import { renderSettings } from "./views/settings";
 import { renderProcesses } from "./views/processes";
@@ -74,6 +75,11 @@ function route(root: HTMLElement): void {
 
   if (hash === "#/reports") {
     renderReports(root);
+    return;
+  }
+
+  if (hash === "#/diagnostics") {
+    renderDiagnostics(root);
     return;
   }
 

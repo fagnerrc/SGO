@@ -10,7 +10,18 @@ import { openFormModal } from "./modal";
 import { refreshTimerDock } from "./timerDock";
 import { toastError, toastWarning } from "./toast";
 
-export type PageKey = "dashboard" | "mywork" | "tasks" | "kanban" | "approvals" | "audit" | "reports" | "collaborators" | "processes" | "settings";
+export type PageKey =
+  | "dashboard"
+  | "mywork"
+  | "tasks"
+  | "kanban"
+  | "approvals"
+  | "audit"
+  | "reports"
+  | "diagnostics"
+  | "collaborators"
+  | "processes"
+  | "settings";
 
 const PRIVILEGED_ROLES = new Set(["admin", "diretoria", "auditoria"]);
 
@@ -71,6 +82,8 @@ const ICONS: Record<PageKey, string> = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 0 1 1 1v1h1a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h1V3a1 1 0 0 1 1-1Z"/><path d="m9 13 2 2 4-4"/></svg>',
   reports:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  diagnostics:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
   collaborators:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   processes:
@@ -131,6 +144,7 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
     links.push({ key: "audit", label: "Auditoria", href: "#/audit" });
     links.push({ key: "collaborators", label: "Colaboradores", href: "#/admin/collaborators" });
     links.push({ key: "processes", label: "Processos", href: "#/admin/processes" });
+    links.push({ key: "diagnostics", label: "Diagnóstico", href: "#/diagnostics" });
   }
 
   const brandName = branding?.displayName || branding?.name || "SGO";

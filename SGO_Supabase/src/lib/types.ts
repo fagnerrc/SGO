@@ -65,6 +65,29 @@ export type AuditResult = "Aprovada" | "Reprovada";
 
 export type AuditFindingStatus = "Aberto" | "Em andamento" | "Concluído" | "Validado" | "Ineficaz" | "Cancelado";
 
+export type LogLevel = "info" | "warn" | "error";
+export type LogKind = "activity" | "audit" | "security" | "diagnostic";
+
+export interface LogEntry {
+  id: number;
+  kind: LogKind;
+  level: LogLevel;
+  user_id: string;
+  task_id: string | null;
+  action: string;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface CronJobStatus {
+  jobname: string;
+  schedule: string;
+  active: boolean;
+  last_status: string | null;
+  last_start: string | null;
+  last_end: string | null;
+}
+
 export interface AuditFinding {
   id: string;
   task_id: string;
