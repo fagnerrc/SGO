@@ -2,20 +2,10 @@ import { Chart, registerables } from "chart.js";
 import { computeCompletionsByDay, computeDashboardStats, computeWorkload, listRecentActivity, listRecentCompletions } from "../lib/dashboard";
 import { listCompanyProfiles } from "../lib/profiles";
 import { listMyTasks } from "../lib/tasks";
-import { initials } from "./badges";
+import { initials, STATUS_CHART_COLORS } from "./badges";
 import { renderNav } from "./nav";
 
 Chart.register(...registerables);
-
-const STATUS_CHART_COLORS: Record<string, string> = {
-  "Em andamento": "#e0954b",
-  "Aguardando terceiro": "#d6527d",
-  "Aguardando aprovação": "#d6527d",
-  "Reprovada/devolvida": "#c0522e",
-  Concluída: "#2fa968",
-  Auditada: "#7c6fd9",
-  Cancelada: "#8892a6",
-};
 
 let statusChart: Chart | null = null;
 let trendChart: Chart | null = null;

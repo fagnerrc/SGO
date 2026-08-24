@@ -16,7 +16,7 @@ import {
 } from "../lib/reports";
 import { listMyTasks } from "../lib/tasks";
 import type { Profile, Task } from "../lib/types";
-import { priorityBadge, statusBadge } from "./badges";
+import { priorityBadge, PRIORITY_CHART_COLORS, statusBadge } from "./badges";
 import { renderNav } from "./nav";
 
 Chart.register(...registerables);
@@ -30,13 +30,6 @@ const ALL_STATUSES = [
   "Auditada",
   "Cancelada",
 ];
-
-const PRIORITY_CHART_COLORS: Record<string, string> = {
-  Baixa: "#2fa968",
-  Normal: "#2f6fa0",
-  Alta: "#e0954b",
-  Urgente: "#c0522e",
-};
 
 let priorityChart: Chart | null = null;
 let areaChart: Chart | null = null;

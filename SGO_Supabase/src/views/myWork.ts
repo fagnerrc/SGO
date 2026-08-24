@@ -1,8 +1,11 @@
+import { Chart, registerables } from "chart.js";
 import { bucketMyWork, type MyWorkTab } from "../lib/myWork";
 import { listMyTasks } from "../lib/tasks";
 import type { Task } from "../lib/types";
 import { priorityBadge, statusBadge } from "./badges";
 import { getCachedProfile, renderNav } from "./nav";
+
+Chart.register(...registerables);
 
 const TABS: { key: MyWorkTab; label: string }[] = [
   { key: "hoje_atrasadas", label: "Hoje e atrasadas" },
@@ -11,6 +14,16 @@ const TABS: { key: MyWorkTab; label: string }[] = [
   { key: "devolvidas", label: "Devolvidas" },
   { key: "concluidas", label: "Concluídas" },
 ];
+
+const BUCKET_CHART_COLORS: Record<MyWorkTab, string> = {
+  hoje_atrasadas: "#c0522e",
+  proximas: "#2f6fa0",
+  aguardando: "#e0954b",
+  devolvidas: "#d6527d",
+  concluidas: "#2fa968",
+};
+
+let bucketChart: Chart | null = null;
 
 function formatPrazo(prazo: string | null): string {
   if (!prazo) return "sem prazo";
@@ -40,9 +53,15 @@ export async function renderMyWork(root: HTMLElement, onOpenTask: (taskId: strin
   const buckets = bucketMyWork(tasks, myProfileId);
   let active: MyWorkTab = buckets.hoje_atrasadas.length > 0 ? "hoje_atrasadas" : "proximas";
 
+  bucketChart?.destroy();
+
   shell.innerHTML = `
     <h1 class="dashboard-title">Meu trabalho</h1>
     <p class="dashboard-subtitle">Só as tarefas em que você é responsável ou participante — separadas pelo que precisa de atenção agora.</p>
+    <div class="card">
+      <h3>Panorama</h3>
+      <div class="chart-box chart-box-sm"><canvas id="mywork-chart"></canvas></div>
+    </div>
     <div class="tabs" id="mywork-tabs">
       ${TABS.map((t) => `<button type="button" class="tab" data-tab="${t.key}">${t.label} <span class="tab-count">${buckets[t.key].length}</span></button>`).join("")}
     </div>
@@ -51,6 +70,21 @@ export async function renderMyWork(root: HTMLElement, onOpenTask: (taskId: strin
 
   const listEl = shell.querySelector<HTMLDivElement>("#mywork-list")!;
   const tabButtons = shell.querySelectorAll<HTMLButtonElement>(".tab");
+
+  const bucketCtx = shell.querySelector<HTMLCanvasElement>("#mywork-chart")!;
+  bucketChart = new Chart(bucketCtx, {
+    type: "bar",
+    data: {
+      labels: TABS.map((t) => t.label),
+      datasets: [{ data: TABS.map((t) => buckets[t.key].length), backgroundColor: TABS.map((t) => BUCKET_CHART_COLORS[t.key]), borderRadius: 4 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
 
   function renderTab(tab: MyWorkTab): void {
     active = tab;

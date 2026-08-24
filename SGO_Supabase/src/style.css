@@ -1031,8 +1031,7 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  width: max-content;
-  max-width: 100%;
+  width: 100%;
   margin-bottom: 1.1rem;
   padding: 4px;
   border: 1px solid var(--border);
@@ -1040,6 +1039,7 @@ a {
   background: var(--surface);
 }
 .tab {
+  flex: 1 1 140px;
   padding: 0.5rem 0.9rem;
   border: none;
   border-radius: 999px;
@@ -1050,6 +1050,7 @@ a {
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
 }
 .tab.active {

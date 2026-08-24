@@ -1,10 +1,13 @@
+import { Chart, registerables } from "chart.js";
 import { applyTaskFilters, type TaskFilterState } from "../lib/taskFilters";
 import { listCompanyProfiles } from "../lib/profiles";
 import { listMyTasks } from "../lib/tasks";
 import type { Profile, Task } from "../lib/types";
-import { priorityBadge, statusBadge } from "./badges";
+import { priorityBadge, statusBadge, STATUS_CHART_COLORS } from "./badges";
 import { renderFilterBar } from "./filterBar";
 import { renderNav } from "./nav";
+
+Chart.register(...registerables);
 
 const ALL_STATUSES = [
   "Em andamento",
@@ -24,6 +27,8 @@ function formatPrazo(prazo: string | null): string {
   return overdue ? `${formatted} (atrasada)` : formatted;
 }
 
+let statusChart: Chart | null = null;
+
 export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: string) => void): Promise<void> {
   root.innerHTML = `
     <div id="nav-mount"></div>
@@ -33,11 +38,17 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
         <button id="new-task-btn" class="btn-primary">+ Nova tarefa</button>
       </header>
       <div id="filter-mount"></div>
-      <p id="filter-summary" class="dashboard-subtitle"></p>
+      <div class="card">
+        <h3>Distribuição por status</h3>
+        <p class="dashboard-subtitle" id="filter-summary" style="margin-bottom:0.75rem"></p>
+        <div class="chart-box chart-box-sm"><canvas id="task-status-chart"></canvas></div>
+      </div>
       <div id="task-list" class="task-list">Carregando...</div>
     </div>
   `;
   await renderNav(root.querySelector("#nav-mount")!, "tasks");
+
+  statusChart?.destroy();
 
   root.querySelector("#new-task-btn")!.addEventListener("click", () => {
     location.hash = "#/tasks/new";
@@ -55,8 +66,24 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
     return;
   }
 
+  const chartCtx = root.querySelector<HTMLCanvasElement>("#task-status-chart")!;
+
   function renderList(filtered: Task[]): void {
     summaryEl.textContent = `${filtered.length} de ${tasks.length} tarefa(s)`;
+
+    const byStatus = new Map<string, number>();
+    for (const t of filtered) byStatus.set(t.status, (byStatus.get(t.status) ?? 0) + 1);
+    const labels = Array.from(byStatus.keys());
+    statusChart?.destroy();
+    statusChart = new Chart(chartCtx, {
+      type: "doughnut",
+      data: {
+        labels,
+        datasets: [{ data: labels.map((l) => byStatus.get(l)!), backgroundColor: labels.map((l) => STATUS_CHART_COLORS[l] ?? "#8892a6"), borderWidth: 0 }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } } },
+    });
+
     if (filtered.length === 0) {
       listEl.innerHTML = "<p>Nenhuma tarefa encontrada com esses filtros.</p>";
       return;

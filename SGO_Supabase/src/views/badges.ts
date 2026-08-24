@@ -26,6 +26,27 @@ const RISK_COLOR: Record<string, string> = {
   Crítico: "red",
 };
 
+// Hex equivalents of the same palette, for Chart.js canvases (CSS badge
+// classes don't help there) — shared by dashboard.ts, reports.ts,
+// taskList.ts and myWork.ts so every "tasks by status/priority" chart in
+// the app uses identical colors.
+export const STATUS_CHART_COLORS: Record<string, string> = {
+  "Em andamento": "#e0954b",
+  "Aguardando terceiro": "#d6527d",
+  "Aguardando aprovação": "#d6527d",
+  "Reprovada/devolvida": "#c0522e",
+  Concluída: "#2fa968",
+  Auditada: "#7c6fd9",
+  Cancelada: "#8892a6",
+};
+
+export const PRIORITY_CHART_COLORS: Record<string, string> = {
+  Baixa: "#2fa968",
+  Normal: "#2f6fa0",
+  Alta: "#e0954b",
+  Urgente: "#c0522e",
+};
+
 function badge(label: string, color: string): string {
   return `<span class="badge badge-${color}">${escapeHtml(label)}</span>`;
 }
