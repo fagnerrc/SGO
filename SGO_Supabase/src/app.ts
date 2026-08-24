@@ -13,6 +13,7 @@ import { renderCollaborators } from "./views/collaborators";
 import { renderSettings } from "./views/settings";
 import { renderProcesses } from "./views/processes";
 import { renderMyWork } from "./views/myWork";
+import { renderRoutines } from "./views/routines";
 
 // Deliberately minimal hash router — no SPA framework, matching the old
 // system's plain-JS approach (see SGO_Supabase_Migration_Prompt.md section
@@ -95,6 +96,11 @@ function route(root: HTMLElement): void {
 
   if (hash === "#/admin/processes") {
     renderProcesses(root);
+    return;
+  }
+
+  if (hash === "#/admin/routines") {
+    renderRoutines(root);
     return;
   }
 

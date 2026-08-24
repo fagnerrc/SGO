@@ -1,9 +1,10 @@
 import { Chart, registerables } from "chart.js";
 import { computeCompletionsByDay, computeDashboardStats, computeWorkload, listRecentActivity, listRecentCompletions } from "../lib/dashboard";
 import { listCompanyProfiles } from "../lib/profiles";
+import { listRoutines } from "../lib/routines";
 import { listMyTasks } from "../lib/tasks";
 import { initials, STATUS_CHART_COLORS } from "./badges";
-import { renderNav } from "./nav";
+import { getCachedProfile, renderNav } from "./nav";
 
 Chart.register(...registerables);
 
@@ -36,6 +37,24 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
   const workload = computeWorkload(tasks, profiles);
   const trend = computeCompletionsByDay(completions);
 
+  // Rotinas Periódicas indicators — admin-only, same restriction as the
+  // module itself (section 26). Reuses the already-fetched `tasks` list
+  // instead of a second query to count today's auto-generated ones.
+  const profile = await getCachedProfile().catch(() => null);
+  let routineStats: { active: number; generatedToday: number } | null = null;
+  if (profile?.role === "admin") {
+    try {
+      const routines = await listRoutines();
+      const todayStr = new Date().toDateString();
+      routineStats = {
+        active: routines.filter((r) => r.status === "ACTIVE").length,
+        generatedToday: tasks.filter((t) => t.tipo === "Rotina periódica" && new Date(t.created_at).toDateString() === todayStr).length,
+      };
+    } catch {
+      // Dashboard still works without these tiles if the routines query fails.
+    }
+  }
+
   shell.innerHTML = `
     <h1 class="dashboard-title">Dashboard</h1>
     <p class="dashboard-subtitle">Indicadores calculados a partir das tarefas visíveis para você.</p>
@@ -65,6 +84,23 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
         <div class="kpi-value">${stats.approvalsPending}</div>
         <div class="kpi-sub">Aguardando decisão</div>
       </article>
+      ${
+        routineStats
+          ? `
+      <article class="kpi-tile tile-blue">
+        <span class="kpi-tile-icon">${iconRepeat()}</span>
+        <span class="kpi-label">Rotinas ativas</span>
+        <div class="kpi-value">${routineStats.active}</div>
+        <div class="kpi-sub">Gerando tarefas automaticamente</div>
+      </article>
+      <article class="kpi-tile tile-mint">
+        <span class="kpi-tile-icon">${iconRepeat()}</span>
+        <span class="kpi-label">Tarefas periódicas hoje</span>
+        <div class="kpi-value">${routineStats.generatedToday}</div>
+        <div class="kpi-sub">Geradas automaticamente hoje</div>
+      </article>`
+          : ""
+      }
     </div>
 
     <div class="dashboard-grid">
@@ -183,6 +219,9 @@ function iconCheck(): string {
 }
 function iconStamp(): string {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14l-1.5 8h-11z" transform="translate(0 2)"/><circle cx="12" cy="9" r="4"/></svg>';
+}
+function iconRepeat(): string {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.2v-2a4 4 0 0 1 4-4h14"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.8v2a4 4 0 0 1-4 4H3"/></svg>';
 }
 
 function escapeHtml(value: string): string {

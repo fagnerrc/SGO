@@ -845,6 +845,56 @@ a {
   background: var(--surface);
 }
 
+.weekday-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.3rem 0 1rem;
+}
+.weekday-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  font-size: 0.82rem;
+  cursor: pointer;
+  user-select: none;
+}
+.weekday-chip:has(input:checked) {
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  color: var(--primary-dark);
+  font-weight: 600;
+}
+.weekday-chip input {
+  margin: 0;
+}
+
+.routine-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.routine-history-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.routine-history-list li span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 /* Badges — status / priority / risk */
 
 .badge {

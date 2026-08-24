@@ -2,7 +2,7 @@ import { Chart, registerables } from "chart.js";
 import { bucketMyWork, type MyWorkTab } from "../lib/myWork";
 import { listMyTasks } from "../lib/tasks";
 import type { Task } from "../lib/types";
-import { priorityBadge, statusBadge } from "./badges";
+import { priorityBadge, routineBadge, statusBadge } from "./badges";
 import { getCachedProfile, renderNav } from "./nav";
 
 Chart.register(...registerables);
@@ -98,7 +98,7 @@ export async function renderMyWork(root: HTMLElement, onOpenTask: (taskId: strin
       .map(
         (task) => `
       <button class="task-card" data-task-id="${task.id}">
-        <span class="task-card-code">${task.code ?? ""} ${priorityBadge(task.prioridade)}</span>
+        <span class="task-card-code">${task.code ?? ""} ${priorityBadge(task.prioridade)} ${routineBadge(task.tipo)}</span>
         <span class="task-card-title">${escapeHtml(task.titulo)}</span>
         <span class="task-card-status">${statusBadge(task.status)}</span>
         <span class="task-card-deadline">${tab === "concluidas" && task.concluido_em ? "concluída em " + new Date(task.concluido_em).toLocaleDateString("pt-BR") : formatPrazo(task.prazo)}</span>

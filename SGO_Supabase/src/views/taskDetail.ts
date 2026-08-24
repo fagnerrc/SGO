@@ -1,6 +1,6 @@
 import { cancelTask, completeTask, deleteTask, getChecklist, getTask, pauseTask, resumeTask, restoreTask, startTask, toggleChecklistItem } from "../lib/tasks";
 import type { Task } from "../lib/types";
-import { priorityBadge, riskBadge, statusBadge } from "./badges";
+import { priorityBadge, riskBadge, routineBadge, statusBadge } from "./badges";
 import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
 import { toastSuccess } from "./toast";
@@ -70,7 +70,7 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
       </header>
       <div class="task-detail">
         <h2>${escapeHtml(task.titulo)}</h2>
-        <p class="task-detail-status">${statusBadge(task.status)} ${priorityBadge(task.prioridade)} ${riskBadge(task.risco)}</p>
+        <p class="task-detail-status">${statusBadge(task.status)} ${priorityBadge(task.prioridade)} ${riskBadge(task.risco)} ${routineBadge(task.tipo)}</p>
         <p>${escapeHtml(task.descricao)}</p>
 
         ${

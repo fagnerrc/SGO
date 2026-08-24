@@ -43,6 +43,8 @@ export interface Task {
   updated_at: string;
   concluido_em: string | null;
   excluido: boolean;
+  routine_id: string | null;
+  routine_occurrence_key: string | null;
 }
 
 export interface ChecklistItem {
@@ -115,4 +117,51 @@ export interface AuditFinding {
     data_inicio: string | null;
     concluido_em: string | null;
   } | null;
+}
+
+export type RoutineStatus = "ACTIVE" | "PAUSED" | "CANCELLED";
+
+export interface Routine {
+  id: string;
+  code: string | null;
+  company_id: string;
+  area: string;
+  name: string;
+  description: string;
+  process_id: string | null;
+  responsible_id: string;
+  participant_ids: string[];
+  priority: string;
+  risk: string;
+  tags: string[];
+  evidence_required: boolean;
+  checklist_template: string[];
+  week_days: string[];
+  creation_time: string; // "HH:MM:SS"
+  deadline_time: string;
+  timezone: string;
+  status: RoutineStatus;
+  start_date: string;
+  end_mode: "UNTIL_CANCELLED";
+  created_by: string;
+  created_at: string;
+  updated_by: string | null;
+  updated_at: string;
+  cancelled_by: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string;
+  last_generated_at: string | null;
+  last_occurrence_date: string | null;
+  last_generated_task_id: string | null;
+  next_occurrence_at: string | null;
+  version: number;
+}
+
+export interface RoutineHistoryEntry {
+  id: number;
+  routine_id: string;
+  at: string;
+  user_id: string | null;
+  action: string;
+  details: Record<string, unknown>;
 }
