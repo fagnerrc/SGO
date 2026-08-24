@@ -11,11 +11,74 @@ let dockEl: HTMLElement | null = null;
 let currentTask: Task | null = null;
 let tickHandle: ReturnType<typeof setInterval> | null = null;
 
+// Dragging: position is stored/persisted as left/top so it's independent
+// of the default right/bottom anchoring — once the person drags it once,
+// it stays wherever they left it (including across a reload).
+const POSITION_KEY = "sgo.timerDockPos";
+let dockPosition: { left: number; top: number } | null = loadDockPosition();
+
+function loadDockPosition(): { left: number; top: number } | null {
+  try {
+    const raw = localStorage.getItem(POSITION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.left === "number" && typeof parsed?.top === "number") return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function clampPosition(left: number, top: number, el: HTMLElement): { left: number; top: number } {
+  const rect = el.getBoundingClientRect();
+  const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
+  const maxTop = Math.max(8, window.innerHeight - rect.height - 8);
+  return { left: Math.min(Math.max(8, left), maxLeft), top: Math.min(Math.max(8, top), maxTop) };
+}
+
+function applyPosition(dock: HTMLElement): void {
+  if (!dockPosition) return;
+  const clamped = clampPosition(dockPosition.left, dockPosition.top, dock);
+  dockPosition = clamped;
+  dock.style.left = `${clamped.left}px`;
+  dock.style.top = `${clamped.top}px`;
+  dock.style.right = "auto";
+  dock.style.bottom = "auto";
+}
+
+function startDrag(startEvent: PointerEvent, dock: HTMLElement): void {
+  startEvent.preventDefault();
+  const rect = dock.getBoundingClientRect();
+  const offsetX = startEvent.clientX - rect.left;
+  const offsetY = startEvent.clientY - rect.top;
+  dock.classList.add("timer-dock-dragging");
+
+  function onMove(e: PointerEvent): void {
+    const { left, top } = clampPosition(e.clientX - offsetX, e.clientY - offsetY, dock);
+    dock.style.left = `${left}px`;
+    dock.style.top = `${top}px`;
+    dock.style.right = "auto";
+    dock.style.bottom = "auto";
+  }
+  function onUp(e: PointerEvent): void {
+    window.removeEventListener("pointermove", onMove);
+    dock.classList.remove("timer-dock-dragging");
+    dockPosition = clampPosition(e.clientX - offsetX, e.clientY - offsetY, dock);
+    localStorage.setItem(POSITION_KEY, JSON.stringify(dockPosition));
+  }
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp, { once: true });
+}
+
 export function initTimerDock(container: HTMLElement): void {
   dockEl = container;
   void refreshTimerDock();
   setInterval(() => void refreshTimerDock(), 20000);
   window.addEventListener("hashchange", () => void refreshTimerDock());
+  window.addEventListener("resize", () => {
+    const dock = dockEl?.querySelector<HTMLElement>(".timer-dock");
+    if (dock) applyPosition(dock);
+  });
   if (!tickHandle) tickHandle = setInterval(tick, 1000);
 }
 
@@ -44,6 +107,7 @@ function render(): void {
   const task = currentTask;
   dockEl.innerHTML = `
     <div class="timer-dock">
+      <span class="timer-dock-handle" title="Arrastar para mover" aria-hidden="true">⠿</span>
       <div class="timer-dock-info">
         <span class="timer-dock-code">${task.code ?? ""}</span>
         <span class="timer-dock-title">${escapeHtml(task.titulo)}</span>
@@ -56,6 +120,9 @@ function render(): void {
       </div>
     </div>
   `;
+  const dockNode = dockEl.querySelector<HTMLElement>(".timer-dock")!;
+  applyPosition(dockNode);
+  dockEl.querySelector<HTMLElement>(".timer-dock-handle")!.addEventListener("pointerdown", (e) => startDrag(e, dockNode));
   dockEl.querySelector("#timer-dock-open")!.addEventListener("click", () => {
     location.hash = `#/tasks/${task.id}`;
   });

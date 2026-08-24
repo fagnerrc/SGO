@@ -8,10 +8,28 @@ function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+// Same live-elapsed math as timerDock.ts's tick() — timer_total_ms only
+// gets the running session folded into it when the timer actually stops
+// (pause/complete), so displaying that field alone while running just
+// shows whatever it was at the last stop, frozen, which is exactly the
+// "não está contando" bug this fixes.
+function liveElapsedMs(task: Task): number {
+  if (task.timer_state !== "running") return task.timer_total_ms;
+  const activeStarted = task.timer_active_started_at ? new Date(task.timer_active_started_at).getTime() : Date.now();
+  return task.timer_total_ms + Math.max(0, Date.now() - activeStarted);
+}
+
+let tickHandle: ReturnType<typeof setInterval> | null = null;
+
 export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack: () => void): Promise<void> {
+  if (tickHandle) {
+    clearInterval(tickHandle);
+    tickHandle = null;
+  }
   root.innerHTML = `<div id="nav-mount"></div><div class="app-shell"><p>Carregando...</p></div>`;
   await renderNav(root.querySelector("#nav-mount")!, "tasks");
 
@@ -40,11 +58,14 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
         ${
           isTimed
             ? `
-          <section class="timer-panel">
-            <p class="timer-total">${formatDuration(task.timer_total_ms)}</p>
+          <section class="timer-panel${timerRunning ? " timer-panel-running" : ""}">
+            <p class="timer-status"><span class="status-dot${timerRunning ? " is-active" : ""}">●</span>${
+              timerRunning ? "Cronômetro em andamento" : task.timer_state === "paused" ? "Cronômetro pausado" : "Cronômetro parado"
+            }</p>
+            <p class="timer-total" id="timer-total-live">${formatDuration(liveElapsedMs(task))}</p>
             <div class="timer-actions">
               ${task.status === "Em andamento" && !timerRunning ? '<button id="start-btn">Iniciar</button>' : ""}
-              ${timerRunning ? '<button id="pause-btn">Pausar</button>' : ""}
+              ${timerRunning ? '<button id="pause-btn" class="btn-outline">Pausar</button>' : ""}
               ${task.status === "Em andamento" && task.timer_state === "paused" ? '<button id="resume-btn">Retomar</button>' : ""}
             </div>
           </section>`
@@ -89,7 +110,21 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
       </div>
   `;
 
-  root.querySelector("#back-btn")!.addEventListener("click", onBack);
+  root.querySelector("#back-btn")!.addEventListener("click", () => {
+    if (tickHandle) {
+      clearInterval(tickHandle);
+      tickHandle = null;
+    }
+    onBack();
+  });
+
+  if (timerRunning) {
+    tickHandle = setInterval(() => {
+      const timeEl = root.querySelector<HTMLParagraphElement>("#timer-total-live");
+      if (!timeEl) return;
+      timeEl.textContent = formatDuration(liveElapsedMs(task));
+    }, 1000);
+  }
 
   const errorEl = root.querySelector<HTMLParagraphElement>("#action-error")!;
   const showError = (err: unknown) => {

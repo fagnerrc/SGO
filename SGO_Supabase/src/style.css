@@ -827,17 +827,36 @@ a {
 
 .timer-panel {
   text-align: center;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.timer-panel-running {
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+}
+.timer-status {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .timer-total {
-  font-size: 2rem;
+  font-size: 2.6rem;
   font-variant-numeric: tabular-nums;
-  margin: 0 0 0.75rem;
-  font-weight: 700;
+  margin: 0 0 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   color: var(--heading);
 }
 .timer-actions button,
 .complete-panel button {
   margin-right: 0.5rem;
+}
+.timer-actions .btn-outline {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
 }
 
 .checklist-panel ul {
@@ -1612,12 +1631,29 @@ a {
   z-index: 80;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   padding: 0.7rem 1rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
   box-shadow: var(--shadow-md);
+}
+.timer-dock-dragging {
+  box-shadow: var(--shadow-md), 0 0 0 3px var(--focus-ring);
+  transition: none;
+}
+.timer-dock-handle {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  padding: 0 2px;
+}
+.timer-dock-dragging .timer-dock-handle {
+  cursor: grabbing;
 }
 .timer-dock-info {
   display: flex;
