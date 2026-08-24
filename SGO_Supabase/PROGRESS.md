@@ -950,3 +950,57 @@ still not reachable — but two things were validated for real, not just read by
    belongs, and it still isn't built.
 10. **No local-first outbox** (phase 6) and **no chat/notifications/admin/diagnostics UI** — see
     the phase 6 section above for the full list; not repeated here.
+
+## SCROLLBAR ELIMINATION + 3 CHECKLIST GAPS (2026-08-24)
+
+User compared the live app against the old system again and flagged three things: no scrollbars
+allowed anywhere (explicit spec, quoted in full in chat, not repeated here), "novo colaborador não
+tem a senha" (turned out to be a non-issue — the temp-PIN flow already works identically to the
+old system; the *real* gap found was no PIN-reset action for an *existing* collaborator), auditoria
+not working, and no relatórios tab. All shipped and deployed to both GitHub Pages and Vercel this
+session; verified live at 1366×768, 1440×900, 1536×864 and 1920×1080 with a zero-horizontal-overflow
+JS sweep on every route (`el.scrollWidth > el.clientWidth` with `overflow-x:hidden` excluded).
+
+1. **No horizontal/internal scrollbars anywhere.** Kanban board rewritten from fixed-width
+   flex+scroll to CSS Grid (`repeat(var(--kanban-cols,7), minmax(0,1fr))`, wrapping to
+   `auto-fit minmax(190px,1fr)` below 1600px). Colaboradores/Processos tables: `table-layout:fixed`
+   with proportional `<colgroup>` widths + ellipsis/tooltip truncation on desktop, collapsing to a
+   stacked label/value card per row below 860px (`data-label` + `::before`, thead hidden). Added a
+   page-level `body { overflow-x: hidden }` safety net. Found and fixed a real Chart.js + CSS Grid
+   "blowout" while building Relatórios (below) — two canvases sharing one `.dashboard-grid` row
+   grew past their container (grid items default to `min-width:auto`); fixed at the root with
+   `min-width:0` on `.dashboard-grid > .card` and `max-width:100%` on the canvas, so it can't
+   recur wherever `.dashboard-grid` gets reused later.
+2. **Admin PIN reset**: `set_pin()` already let a privileged caller set any profile's PIN (unused
+   from the UI); added `resetProfilePin()` + a "Redefinir PIN" button per row in Colaboradores,
+   confirmed via modal since it force-revokes the person's sessions.
+3. **Real audit workflow** (`0030_audit_findings.sql`): the previous `audit_task()` (0025) was a
+   bare `Concluída -> Auditada` status flip, triggerable from *any* Kanban card's move-select by
+   *any* user (server-side `is_privileged()` caught it, but the option was visibly offered to
+   non-privileged users first — a real bug, not just a UX gap). Replaced with a proper
+   `audit_findings` table + a rewritten `audit_task()` that takes a full finding (resultado
+   Aprovada/Reprovada, risco, fato, causa, impacto, ação corretiva, responsável+prazo for the
+   corrective action, evidência) and either approves to `Auditada` or reproves back to
+   `Reprovada/devolvida` (new `enforce_task_transition()` exception for that second path, action
+   `audit_reject`) — plus `set_audit_finding_status()` for the finding's own lifecycle (Aberto →
+   Em andamento → Concluído → Validado/Ineficaz/Cancelado). New `/audit` screen (privileged roles
+   only, same gate as Colaboradores/Processos): queue of `Concluída` tasks + a findings table.
+   Kanban's raw "mover para Auditada" option was removed entirely — auditing only happens through
+   the real form now. `openFormModal` (`modal.ts`) gained `select`/`date` field types for this.
+   Tested end-to-end live: completed a task, reproved it through the new form (responsável +
+   prazo required, confirmed both are enforced server-side), watched it land back in
+   Reprovada/devolvida with a finding in 'Aberto', then updated the finding's status.
+4. **Relatórios screen** (`src/lib/reports.ts` + `src/views/reports.ts`): filters (responsável,
+   status, período by `created_at`), KPIs (total, concluídas, atrasadas, % SLA cumprido, tempo
+   rastreado somando `timer_total_ms`), two Chart.js charts (prioridade em rosca, área em barra),
+   detailed table, CSV export (client-side `Blob`+`<a download>`, BOM-prefixed for Excel). Reuses
+   `listMyTasks()`'s already-RLS-filtered rows like `dashboard.ts` does, no new query. Visible to
+   `admin`/`diretoria`/`auditoria` **and** `gestor` (old system's exact access list) — note a
+   gestor only ever sees their own area's tasks here, via the existing `tasks_select` RLS clause,
+   not a report-specific restriction.
+
+Known test-data footprint from this session's live verification (left in place, same convention as
+every earlier phase): one collaborator ("Teste Investigacao QA") created then immediately
+deactivated to verify the PIN-reset flow; task SGO-000035 ("Teste", already pre-existing test data
+from an earlier phase) was pushed through Concluída → reproved-audit → Reprovada/devolvida to
+verify the new audit form end-to-end, and now carries one real `audit_findings` row.
