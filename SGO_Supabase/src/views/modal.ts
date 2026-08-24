@@ -6,7 +6,7 @@
 export interface ModalField {
   name: string;
   label: string;
-  type?: "text" | "textarea" | "select" | "date";
+  type?: "text" | "textarea" | "select" | "date" | "readonly";
   required?: boolean;
   options?: { value: string; label: string }[]; // for type: "select"
   defaultValue?: string;
@@ -36,7 +36,9 @@ export function openFormModal(options: {
               (f) => `
             <label for="modal-${f.name}">${escapeHtml(f.label)}${f.required ? " *" : ""}</label>
             ${
-              f.type === "textarea"
+              f.type === "readonly"
+                ? `<p class="modal-readonly-value">${escapeHtml(f.defaultValue ?? "—")}</p>`
+                : f.type === "textarea"
                 ? `<textarea id="modal-${f.name}" name="${f.name}" rows="3" ${f.required ? "required" : ""}>${escapeHtml(f.defaultValue ?? "")}</textarea>`
                 : f.type === "select"
                   ? `<select id="modal-${f.name}" name="${f.name}" ${f.required ? "required" : ""}>
@@ -72,6 +74,7 @@ export function openFormModal(options: {
       event.preventDefault();
       const values: Record<string, string> = {};
       for (const f of options.fields) {
+        if (f.type === "readonly") continue;
         values[f.name] = (form.elements.namedItem(f.name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value.trim();
       }
       cleanup(values);

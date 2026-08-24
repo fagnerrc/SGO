@@ -140,6 +140,9 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
       title: "Registrar auditoria",
       description: "Fato e ação corretiva são obrigatórios em ambos os resultados — servem de registro mesmo quando a tarefa é aprovada.",
       fields: [
+        { name: "titulo", label: "Título", type: "readonly", defaultValue: task ? `${task.code ?? ""} ${task.titulo}`.trim() : "—" },
+        { name: "descricao", label: "Descrição", type: "readonly", defaultValue: task?.descricao || "—" },
+        { name: "tempo_gasto", label: "Tempo gasto", type: "readonly", defaultValue: task ? formatSpentTime(task.timer_total_ms) : "—" },
         {
           name: "resultado",
           label: "Resultado",

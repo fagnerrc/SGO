@@ -1529,6 +1529,16 @@ a {
   flex-direction: column;
   gap: 0.25rem;
 }
+.modal-readonly-value {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: var(--text);
+  white-space: pre-wrap;
+}
 .modal-body.task-form h4 {
   margin: 0.9rem 0 0.3rem;
   font-size: 0.85rem;
