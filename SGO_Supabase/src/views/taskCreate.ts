@@ -1,8 +1,9 @@
 import { listCompanyProfiles } from "../lib/profiles";
 import { listProcesses, type Process } from "../lib/processes";
-import { createTask } from "../lib/tasks";
+import { createTask, startTask } from "../lib/tasks";
 import type { Profile } from "../lib/types";
 import { renderNav } from "./nav";
+import { toastError } from "./toast";
 
 export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: string) => void, onCancel: () => void): Promise<void> {
   root.innerHTML = `<div id="nav-mount"></div><div class="app-shell"><p>Carregando...</p></div>`;
@@ -21,14 +22,14 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
   root.querySelector(".app-shell")!.innerHTML = `
       <header class="app-header">
         <button id="back-btn" class="link-button">&larr; Voltar</button>
-        <h1>Nova tarefa</h1>
+        <h1>Tarefa Agendada</h1>
       </header>
       <form id="create-form" class="task-form">
         <label for="titulo">Título *</label>
         <input id="titulo" name="titulo" type="text" required />
 
-        <label for="descricao">Descrição</label>
-        <textarea id="descricao" name="descricao" rows="3"></textarea>
+        <label for="descricao">Descrição *</label>
+        <textarea id="descricao" name="descricao" rows="3" required></textarea>
 
         <label for="processo">Processo (opcional)</label>
         <select id="processo" name="processo">
@@ -36,19 +37,8 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
           ${activeProcesses.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}${p.area ? ` (${escapeHtml(p.area)})` : ""}</option>`).join("")}
         </select>
 
-        <div class="task-form-row">
-          <div>
-            <label for="area">Área *</label>
-            <input id="area" name="area" type="text" required placeholder="ex: Financeiro" />
-          </div>
-          <div>
-            <label for="tipo">Tipo</label>
-            <select id="tipo" name="tipo">
-              <option value="Demanda operacional">Demanda operacional</option>
-              <option value="Tarefa cronometrada">Tarefa cronometrada</option>
-            </select>
-          </div>
-        </div>
+        <label for="area">Área *</label>
+        <input id="area" name="area" type="text" required placeholder="ex: Financeiro" />
 
         <label for="responsavel">Responsável *</label>
         <select id="responsavel" name="responsavel" required>
@@ -58,14 +48,17 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
 
         <div class="task-form-row">
           <div>
-            <label for="prazo">Prazo</label>
-            <input id="prazo" name="prazo" type="datetime-local" />
+            <label for="prazo-data">Data</label>
+            <input id="prazo-data" name="prazo-data" type="date" />
           </div>
           <div>
-            <label for="estimativa">Estimativa (horas)</label>
-            <input id="estimativa" name="estimativa" type="number" min="0" step="0.5" value="0" />
+            <label for="prazo-hora">Horário</label>
+            <input id="prazo-hora" name="prazo-hora" type="time" />
           </div>
         </div>
+
+        <label for="estimativa">Estimativa (horas)</label>
+        <input id="estimativa" name="estimativa" type="number" min="0" step="0.5" value="0" />
 
         <div class="task-form-row">
           <div>
@@ -145,11 +138,14 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
     (root.querySelector<HTMLInputElement>("#estimativa")!).value = String(process.estimativa_padrao);
     (root.querySelector<HTMLSelectElement>("#risco")!).value = process.risco;
 
-    const prazoInput = root.querySelector<HTMLInputElement>("#prazo")!;
-    if (!prazoInput.value && process.sla_horas) {
+    const prazoDataInput = root.querySelector<HTMLInputElement>("#prazo-data")!;
+    const prazoHoraInput = root.querySelector<HTMLInputElement>("#prazo-hora")!;
+    if (!prazoDataInput.value && process.sla_horas) {
       const deadline = new Date(Date.now() + process.sla_horas * 3600000);
       deadline.setSeconds(0, 0);
-      prazoInput.value = deadline.toISOString().slice(0, 16);
+      const iso = deadline.toISOString();
+      prazoDataInput.value = iso.slice(0, 10);
+      prazoHoraInput.value = iso.slice(11, 16);
     }
 
     // Only seed the checklist from the process's template when the
@@ -183,23 +179,34 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
       errorEl.hidden = false;
       return;
     }
+    const descricao = (form.elements.namedItem("descricao") as HTMLTextAreaElement).value.trim();
+    if (!descricao) {
+      errorEl.textContent = "Descrição é obrigatória.";
+      errorEl.hidden = false;
+      return;
+    }
+
+    const prazoData = (form.elements.namedItem("prazo-data") as HTMLInputElement).value;
+    const prazoHora = (form.elements.namedItem("prazo-hora") as HTMLInputElement).value;
+    const prazo = prazoData ? `${prazoData}T${prazoHora || "00:00"}` : undefined;
 
     const submitButton = root.querySelector<HTMLButtonElement>("#submit-btn")!;
     submitButton.disabled = true;
     try {
       const result = await createTask({
         titulo: (form.elements.namedItem("titulo") as HTMLInputElement).value.trim(),
-        descricao: (form.elements.namedItem("descricao") as HTMLTextAreaElement).value.trim(),
+        descricao,
         area: (form.elements.namedItem("area") as HTMLInputElement).value.trim(),
-        tipo: (form.elements.namedItem("tipo") as HTMLSelectElement).value,
+        tipo: "Tarefa agendada",
         processId: (form.elements.namedItem("processo") as HTMLSelectElement).value || undefined,
         responsavelId,
-        prazo: (form.elements.namedItem("prazo") as HTMLInputElement).value || undefined,
+        prazo,
         estimativa: Number((form.elements.namedItem("estimativa") as HTMLInputElement).value || 0),
         prioridade: (form.elements.namedItem("prioridade") as HTMLSelectElement).value,
         risco: (form.elements.namedItem("risco") as HTMLSelectElement).value,
         checklist: checklistItems,
       });
+      await startTask(result.id).catch((err) => toastError(err instanceof Error ? err.message : String(err)));
       onCreated(result.id);
     } catch (err) {
       errorEl.textContent = (err as Error).message;

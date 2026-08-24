@@ -1,4 +1,4 @@
-import { completeTask, getActiveTimerTask, pauseTask } from "../lib/tasks";
+import { completeTask, listOpenTimerTasks, pauseTask, resumeTask, startTask } from "../lib/tasks";
 import type { Task } from "../lib/types";
 import { openFormModal } from "./modal";
 import { getCachedProfile } from "./nav";
@@ -7,8 +7,16 @@ import { getCachedProfile } from "./nav";
 // it survives every route's `root.innerHTML = ...` re-render — the whole
 // point of a dock is that it doesn't disappear when you navigate away
 // from the task it's tracking.
+//
+// Multiple Tarefa cronometrada can be open at once (0034) — this shows
+// the running one (or the most recently touched one, if none is
+// currently running) as the primary card, and the rest behind an
+// expandable "+N outras" list so you can switch to any of them without
+// losing the others. Only one is ever actually running: resuming a
+// different one auto-pauses whichever was running, server-side.
 let dockEl: HTMLElement | null = null;
-let currentTask: Task | null = null;
+let openTasks: Task[] = [];
+let othersExpanded = false;
 let tickHandle: ReturnType<typeof setInterval> | null = null;
 
 // Dragging: position is stored/persisted as left/top so it's independent
@@ -85,50 +93,84 @@ export function initTimerDock(container: HTMLElement): void {
 export async function refreshTimerDock(): Promise<void> {
   if (!dockEl) return;
   if (!localStorage.getItem("sgo.session") || location.hash === "#/login") {
-    currentTask = null;
+    openTasks = [];
     dockEl.innerHTML = "";
     return;
   }
   try {
     const profile = await getCachedProfile();
-    currentTask = await getActiveTimerTask(profile.id);
+    openTasks = await listOpenTimerTasks(profile.id);
   } catch {
-    currentTask = null;
+    openTasks = [];
   }
   render();
 }
 
 function render(): void {
   if (!dockEl) return;
-  if (!currentTask) {
+  if (openTasks.length === 0) {
     dockEl.innerHTML = "";
     return;
   }
-  const task = currentTask;
+  const primary = openTasks[0];
+  const others = openTasks.slice(1);
+  const running = primary.timer_state === "running";
+
   dockEl.innerHTML = `
     <div class="timer-dock">
       <span class="timer-dock-handle" title="Arrastar para mover" aria-hidden="true">⠿</span>
       <div class="timer-dock-info">
-        <span class="timer-dock-code">${task.code ?? ""}</span>
-        <span class="timer-dock-title">${escapeHtml(task.titulo)}</span>
+        <span class="timer-dock-code">${primary.code ?? ""}</span>
+        <span class="timer-dock-title">${escapeHtml(primary.titulo)}</span>
         <span class="timer-dock-time" id="timer-dock-time">00:00:00</span>
       </div>
       <div class="timer-dock-actions">
         <button type="button" id="timer-dock-open" class="link-button">Abrir</button>
-        <button type="button" id="timer-dock-pause" class="btn-outline">Pausar</button>
+        ${
+          running
+            ? '<button type="button" id="timer-dock-pause" class="btn-outline">Pausar</button>'
+            : '<button type="button" id="timer-dock-resume" class="btn-outline">Retomar</button>'
+        }
         <button type="button" id="timer-dock-complete">Concluir</button>
+        ${
+          others.length > 0
+            ? `<button type="button" id="timer-dock-others-toggle" class="timer-dock-others-toggle">+${others.length} outra${others.length > 1 ? "s" : ""}</button>`
+            : ""
+        }
       </div>
+      ${
+        others.length > 0
+          ? `<div class="timer-dock-others-panel" id="timer-dock-others-panel" ${othersExpanded ? "" : "hidden"}>
+              ${others
+                .map(
+                  (t) => `
+                <div class="timer-dock-other-item">
+                  <span class="timer-dock-other-title" title="${escapeHtml(t.titulo)}">${t.code ?? ""} ${escapeHtml(t.titulo)}</span>
+                  <button type="button" class="link-button timer-dock-other-resume" data-task-id="${t.id}">Retomar</button>
+                </div>`,
+                )
+                .join("")}
+            </div>`
+          : ""
+      }
     </div>
   `;
   const dockNode = dockEl.querySelector<HTMLElement>(".timer-dock")!;
   applyPosition(dockNode);
   dockEl.querySelector<HTMLElement>(".timer-dock-handle")!.addEventListener("pointerdown", (e) => startDrag(e, dockNode));
   dockEl.querySelector("#timer-dock-open")!.addEventListener("click", () => {
-    location.hash = `#/tasks/${task.id}`;
+    location.hash = `#/tasks/${primary.id}`;
   });
-  dockEl.querySelector("#timer-dock-pause")!.addEventListener("click", async () => {
+  dockEl.querySelector("#timer-dock-pause")?.addEventListener("click", async () => {
     try {
-      await pauseTask(task.id);
+      await pauseTask(primary.id);
+    } finally {
+      await refreshTimerDock();
+    }
+  });
+  dockEl.querySelector("#timer-dock-resume")?.addEventListener("click", async () => {
+    try {
+      await (primary.status === "Em andamento" ? resumeTask(primary.id) : startTask(primary.id));
     } finally {
       await refreshTimerDock();
     }
@@ -144,20 +186,39 @@ function render(): void {
     });
     if (!values) return;
     try {
-      await completeTask(task.id, values.evidencia, values.justificativa);
+      await completeTask(primary.id, values.evidencia, values.justificativa);
     } finally {
       await refreshTimerDock();
     }
+  });
+  dockEl.querySelector("#timer-dock-others-toggle")?.addEventListener("click", () => {
+    othersExpanded = !othersExpanded;
+    const panel = dockEl?.querySelector<HTMLElement>("#timer-dock-others-panel");
+    if (panel) panel.hidden = !othersExpanded;
+  });
+  dockEl.querySelectorAll<HTMLButtonElement>(".timer-dock-other-resume").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const taskId = btn.dataset.taskId!;
+      const task = others.find((t) => t.id === taskId);
+      try {
+        await (task?.status === "Em andamento" ? resumeTask(taskId) : startTask(taskId));
+      } finally {
+        othersExpanded = false;
+        await refreshTimerDock();
+      }
+    });
   });
   tick();
 }
 
 function tick(): void {
-  if (!currentTask || !dockEl) return;
+  if (openTasks.length === 0 || !dockEl) return;
+  const primary = openTasks[0];
   const timeEl = dockEl.querySelector<HTMLSpanElement>("#timer-dock-time");
   if (!timeEl) return;
-  const activeStarted = currentTask.timer_active_started_at ? new Date(currentTask.timer_active_started_at).getTime() : Date.now();
-  const elapsed = currentTask.timer_total_ms + Math.max(0, Date.now() - activeStarted);
+  const activeStarted = primary.timer_state === "running" && primary.timer_active_started_at ? new Date(primary.timer_active_started_at).getTime() : null;
+  const elapsed = primary.timer_total_ms + (activeStarted ? Math.max(0, Date.now() - activeStarted) : 0);
   timeEl.textContent = formatDuration(elapsed);
 }
 

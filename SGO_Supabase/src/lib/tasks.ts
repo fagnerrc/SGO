@@ -12,10 +12,12 @@ function newOperationId(): string {
   return crypto.randomUUID();
 }
 
-// The "one active timer per person" rule (checklist part 4) is enforced
-// client-side by checking this before starting a new timed task —
-// nothing in the schema stops a second concurrent `timer_state=running`
-// row today, so this is advisory, not a hard guarantee under a race.
+// "One running Cronômetro at a time, any number open" (0034): starting
+// or resuming a Tarefa cronometrada now auto-pauses whichever other one
+// was running, server-side, inside the same transaction — a real
+// guarantee, not a client-side check racing against itself. This still
+// finds *the* running one when there is one (for the dock's primary
+// display); listOpenTimerTasks() below is what surfaces the rest.
 export async function getActiveTimerTask(profileId: string): Promise<Task | null> {
   const { data, error } = await getClient()
     .from("tasks")
@@ -27,6 +29,28 @@ export async function getActiveTimerTask(profileId: string): Promise<Task | null
     .maybeSingle();
   if (error) throwSupabaseError(error);
   return (data as Task | null) ?? null;
+}
+
+// Every open (not yet Concluída/Auditada/Cancelada) Tarefa cronometrada
+// for this person, running one first — this is what lets the dock show
+// "+N outras" and lets a person switch between several open timed tasks
+// without losing any of them.
+export async function listOpenTimerTasks(profileId: string): Promise<Task[]> {
+  const { data, error } = await getClient()
+    .from("tasks")
+    .select("*")
+    .eq("responsavel_id", profileId)
+    .eq("tipo", "Tarefa cronometrada")
+    .not("status", "in", "(Concluída,Auditada,Cancelada)")
+    .eq("excluido", false)
+    .order("updated_at", { ascending: false });
+  if (error) throwSupabaseError(error);
+  const tasks = data as Task[];
+  return tasks.sort((a, b) => {
+    if (a.timer_state === "running" && b.timer_state !== "running") return -1;
+    if (b.timer_state === "running" && a.timer_state !== "running") return 1;
+    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+  });
 }
 
 export async function listMyTasks(): Promise<Task[]> {
@@ -125,7 +149,7 @@ export async function listPendingAudits(): Promise<Task[]> {
 export async function listAuditFindings(): Promise<AuditFinding[]> {
   const { data, error } = await getClient()
     .from("audit_findings")
-    .select("*, tasks(code, titulo)")
+    .select("*, tasks(code, titulo, descricao, tipo, status, responsavel_id, timer_total_ms, prazo, concluido_em)")
     .order("criado_em", { ascending: false });
   if (error) throwSupabaseError(error);
   return data as AuditFinding[];

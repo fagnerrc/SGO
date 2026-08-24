@@ -8,6 +8,16 @@ startApp(root);
 
 initTimerDock(document.querySelector<HTMLDivElement>("#timer-dock-mount")!);
 
+// Modals (openFormModal, showFindingDetail, ...) append themselves to
+// document.body rather than the routed #app root, so a route change
+// alone never removes one still open — without this, navigating away
+// (a link click, browser back) leaves it stacked on top of the new
+// page instead of closing. The timer dock is intentionally exempt: it
+// lives outside #app for the opposite reason, to survive navigation.
+window.addEventListener("hashchange", () => {
+  document.querySelectorAll(".modal-overlay").forEach((el) => el.remove());
+});
+
 // Safety net for anything a view's own try/catch missed — without this,
 // an unexpected exception anywhere just fails silently (the exact class
 // of bug behind the stale-session crash fixed earlier: the page looked

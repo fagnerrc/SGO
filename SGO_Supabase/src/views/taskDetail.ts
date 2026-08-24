@@ -83,6 +83,9 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
             : ""
         }
 
+        ${
+          !isTimed
+            ? `
         <section class="checklist-panel">
           <h3>Checklist</h3>
           <ul id="checklist-list">
@@ -98,7 +101,9 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
               )
               .join("")}
           </ul>
-        </section>
+        </section>`
+            : ""
+        }
 
         ${
           !task.excluido && !["Concluída", "Auditada", "Cancelada"].includes(task.status)

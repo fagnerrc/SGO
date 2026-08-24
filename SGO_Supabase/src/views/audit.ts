@@ -6,12 +6,20 @@
 // set_audit_finding_status() in 0030_audit_findings.sql.
 
 import { listCompanyProfiles } from "../lib/profiles";
-import { auditTask, listAuditFindings, listPendingAudits, setAuditFindingStatus } from "../lib/tasks";
-import type { AuditFinding, AuditFindingStatus, Profile, Task } from "../lib/types";
-import { priorityBadge, riskBadge } from "./badges";
+import { auditTask, getChecklist, listAuditFindings, listPendingAudits, setAuditFindingStatus } from "../lib/tasks";
+import type { AuditFinding, AuditFindingStatus, ChecklistItem, Profile, Task } from "../lib/types";
+import { priorityBadge, riskBadge, statusBadge } from "./badges";
 import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
 import { toastError, toastSuccess } from "./toast";
+
+function formatSpentTime(ms: number): string {
+  const totalMinutes = Math.round(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0 && minutes === 0) return "—";
+  return `${hours}h${String(minutes).padStart(2, "0")}`;
+}
 
 type AuditTab = "fila" | "achados";
 
@@ -27,6 +35,7 @@ const ACAO_OPTIONS = [
   "Escalar problema para gestor",
   "Reatribuir tarefa",
   "Anexar documentação pendente",
+  "Aprovado sem ressalva",
 ];
 
 export async function renderAudit(root: HTMLElement): Promise<void> {
@@ -96,19 +105,27 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
     panel.innerHTML = `
       <div class="task-list">
         ${pending
-          .map(
-            (t) => `
-          <div class="approval-card" data-task-id="${t.id}">
+          .map((t) => {
+            const responsavel = profileById.get(t.responsavel_id);
+            return `
+          <div class="approval-card audit-queue-card" data-task-id="${t.id}">
             <div>
               <span class="task-card-code">${t.code ?? ""} ${priorityBadge(t.prioridade)}</span>
               <span class="task-card-title">${escapeHtml(t.titulo)}</span>
-              <span class="approval-waiting-since">concluída em ${t.concluido_em ? new Date(t.concluido_em).toLocaleDateString("pt-BR") : "—"}</span>
+              ${t.descricao ? `<span class="audit-queue-desc">${escapeHtml(t.descricao)}</span>` : ""}
+              <div class="audit-queue-meta">
+                <span>${escapeHtml(responsavel?.full_name ?? "—")}</span>
+                <span>${t.tipo === "Tarefa cronometrada" ? "Cronômetro" : "Agendada"}</span>
+                <span>Tempo gasto: ${formatSpentTime(t.timer_total_ms)}</span>
+                <span>${statusBadge(t.status)}</span>
+                <span class="approval-waiting-since">concluída em ${t.concluido_em ? new Date(t.concluido_em).toLocaleDateString("pt-BR") : "—"}</span>
+              </div>
             </div>
             <div class="approval-actions">
               <button class="btn-primary audit-btn" data-task-id="${t.id}">Auditar</button>
             </div>
-          </div>`,
-          )
+          </div>`;
+          })
           .join("")}
       </div>
     `;
@@ -235,7 +252,7 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
     panel.querySelectorAll<HTMLButtonElement>(".finding-detail-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const f = findings.find((x) => x.id === btn.dataset.findingId);
-        if (f) showFindingDetail(f);
+        if (f) void showFindingDetail(f, profileById);
       });
     });
   }
@@ -247,22 +264,58 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
   renderTab(active);
 }
 
-function showFindingDetail(f: AuditFinding): void {
+async function showFindingDetail(f: AuditFinding, profileById: Map<string, Profile>): Promise<void> {
+  const task = f.tasks;
+  const isAgendada = task?.tipo === "Tarefa agendada";
+  let checklist: ChecklistItem[] = [];
+  if (isAgendada) {
+    checklist = await getChecklist(f.task_id).catch(() => []);
+  }
+
+  const responsavel = task ? profileById.get(task.responsavel_id) : null;
+  const execRows: [string, string][] = task
+    ? [
+        ["Executado por", responsavel?.full_name ?? "—"],
+        ["Tempo gasto", formatSpentTime(task.timer_total_ms)],
+        ["Tipo", task.tipo === "Tarefa cronometrada" ? "Cronômetro" : "Agendada"],
+        ["Status atual", task.status],
+        ["Descrição da tarefa", task.descricao || "—"],
+        ["Prazo", task.prazo ? new Date(task.prazo).toLocaleString("pt-BR") : "—"],
+        ["Concluída em", task.concluido_em ? new Date(task.concluido_em).toLocaleString("pt-BR") : "—"],
+      ]
+    : [];
+
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay open";
-  const rows: [string, string][] = [
+  const auditRows: [string, string][] = [
     ["Fato observado", f.fato],
     ["Ação corretiva", f.acao],
   ];
-  if (f.evidencia) rows.push(["Evidência / observação", f.evidencia]);
+  if (f.evidencia) auditRows.push(["Evidência / observação", f.evidencia]);
+
   overlay.innerHTML = `
     <div class="modal modal-sm" role="dialog" aria-modal="true">
       <div class="modal-header">
-        <div><h3>${escapeHtml(f.tasks?.code ?? "")} ${escapeHtml(f.tasks?.titulo ?? "")}</h3></div>
+        <div><h3>${escapeHtml(task?.code ?? "")} ${escapeHtml(task?.titulo ?? "")}</h3></div>
         <button type="button" class="modal-close" aria-label="Fechar">&times;</button>
       </div>
       <div class="modal-body task-form">
-        ${rows.map(([label, text]) => `<label>${escapeHtml(label)}</label><p>${escapeHtml(text)}</p>`).join("")}
+        <h4>Execução da tarefa</h4>
+        ${execRows.map(([label, text]) => `<label>${escapeHtml(label)}</label><p>${escapeHtml(text)}</p>`).join("")}
+        ${
+          isAgendada
+            ? `<label>Checklist</label>
+               ${
+                 checklist.length > 0
+                   ? `<ul class="finding-detail-checklist">${checklist
+                       .map((item) => `<li>${item.feito ? "☑" : "☐"} ${escapeHtml(item.texto)}</li>`)
+                       .join("")}</ul>`
+                   : "<p>Sem itens de checklist.</p>"
+               }`
+            : ""
+        }
+        <h4>Registro da auditoria</h4>
+        ${auditRows.map(([label, text]) => `<label>${escapeHtml(label)}</label><p>${escapeHtml(text)}</p>`).join("")}
       </div>
     </div>
   `;

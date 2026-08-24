@@ -102,5 +102,15 @@ export interface AuditFinding {
   status: AuditFindingStatus;
   criado_por: string;
   criado_em: string;
-  tasks?: { code: string | null; titulo: string } | null;
+  tasks?: {
+    code: string | null;
+    titulo: string;
+    descricao: string;
+    tipo: string;
+    status: TaskStatus;
+    responsavel_id: string;
+    timer_total_ms: number;
+    prazo: string | null;
+    concluido_em: string | null;
+  } | null;
 }

@@ -3,12 +3,12 @@ import { logout } from "../lib/auth";
 import { listMyNotifications, markNotificationRead, type AppNotification } from "../lib/notifications";
 import { getMyProfile } from "../lib/profiles";
 import { clearSession } from "../lib/session";
-import { createTask, getActiveTimerTask, listMyTasks, startTask } from "../lib/tasks";
+import { createTask, listMyTasks, startTask } from "../lib/tasks";
 import type { Profile, Task } from "../lib/types";
 import { initials } from "./badges";
 import { openFormModal } from "./modal";
 import { refreshTimerDock } from "./timerDock";
-import { toastError, toastWarning } from "./toast";
+import { toastError } from "./toast";
 
 export type PageKey =
   | "dashboard"
@@ -187,9 +187,13 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
         <div id="topbar-search-results" class="topbar-search-results" hidden></div>
       </div>
       <div class="topbar-actions">
-        <button type="button" id="quick-start-btn" class="quick-start-btn">
+        <button type="button" id="quick-start-btn" class="quick-start-btn" title="Cria e já inicia uma tarefa cronometrada — dá pra ter várias abertas ao mesmo tempo">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          Iniciar tarefa
+          Cronômetro
+        </button>
+        <button type="button" id="new-scheduled-btn" class="btn-outline" title="Abre o formulário completo — título, descrição, data e hora, responsável e checklist">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="16" x2="15" y2="16"/></svg>
+          Tarefa Agendada
         </button>
         <div class="topbar-menu-wrap">
           <button id="notif-btn" class="topbar-icon-btn" aria-label="Notificações">
@@ -240,6 +244,9 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
   void loadNotifications(root); // populate the badge right away, not only once the bell is clicked
 
   root.querySelector("#quick-start-btn")!.addEventListener("click", () => void quickStartTimer(profile));
+  root.querySelector("#new-scheduled-btn")!.addEventListener("click", () => {
+    location.hash = "#/tasks/new";
+  });
 
   const clockEl = root.querySelector<HTMLElement>("#topbar-clock");
   greetingInterval = setInterval(() => {
@@ -261,36 +268,31 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
   }
 }
 
-// "Iniciar tarefa" — the old system's fastest path to registering work:
-// skip the full task form entirely, just ask what you're about to do,
-// and start the timer immediately. Enforces "only one active timer per
-// person" by checking before creating anything, rather than letting a
-// second one start and only noticing later.
+// "Cronômetro" — the fastest path to registering work: a minimal
+// title+description modal, no checklist, no other fields, and the
+// timer starts the moment it's confirmed. Deliberately does NOT check
+// for an already-running timer first — multiple Tarefa cronometrada can
+// be open at once now; start_task() itself auto-pauses whichever other
+// one was running (0034_multi_timer_and_required_fields.sql), so this
+// never needs to block or ask first.
 async function quickStartTimer(profile: Profile | null): Promise<void> {
   if (!profile) return;
 
-  const existing = await getActiveTimerTask(profile.id).catch(() => null);
-  if (existing) {
-    toastWarning(`Você já tem um cronômetro rodando em "${existing.titulo}" (${existing.code ?? ""}). Abrindo essa tarefa.`);
-    location.hash = `#/tasks/${existing.id}`;
-    return;
-  }
-
   const values = await openFormModal({
-    title: "Iniciar tarefa",
-    description: "Descreva rapidamente o que você vai fazer agora — o cronômetro começa assim que confirmar.",
-    fields: [{ name: "descricao", label: "Descrição da atividade", type: "textarea", required: true }],
+    title: "Cronômetro",
+    description: "O cronômetro começa assim que confirmar. Já tem outra tarefa rodando? Ela é pausada automaticamente.",
+    fields: [
+      { name: "titulo", label: "Título", type: "text", required: true },
+      { name: "descricao", label: "Descrição", type: "textarea", required: true },
+    ],
     confirmLabel: "Iniciar",
   });
   if (!values) return;
 
-  const descricao = values.descricao.trim();
-  const titulo = descricao.split("\n")[0].slice(0, 80);
-
   try {
     const result = await createTask({
-      titulo,
-      descricao,
+      titulo: values.titulo.trim(),
+      descricao: values.descricao.trim(),
       area: profile.area || "Geral",
       tipo: "Tarefa cronometrada",
       responsavelId: profile.id,
