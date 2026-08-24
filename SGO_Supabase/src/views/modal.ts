@@ -9,6 +9,7 @@ export interface ModalField {
   type?: "text" | "textarea" | "select" | "date";
   required?: boolean;
   options?: { value: string; label: string }[]; // for type: "select"
+  defaultValue?: string;
 }
 
 export function openFormModal(options: {
@@ -36,13 +37,13 @@ export function openFormModal(options: {
             <label for="modal-${f.name}">${escapeHtml(f.label)}${f.required ? " *" : ""}</label>
             ${
               f.type === "textarea"
-                ? `<textarea id="modal-${f.name}" name="${f.name}" rows="3" ${f.required ? "required" : ""}></textarea>`
+                ? `<textarea id="modal-${f.name}" name="${f.name}" rows="3" ${f.required ? "required" : ""}>${escapeHtml(f.defaultValue ?? "")}</textarea>`
                 : f.type === "select"
                   ? `<select id="modal-${f.name}" name="${f.name}" ${f.required ? "required" : ""}>
                       <option value="">Selecione...</option>
-                      ${(f.options ?? []).map((o) => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join("")}
+                      ${(f.options ?? []).map((o) => `<option value="${escapeHtml(o.value)}"${f.defaultValue === o.value ? " selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
                     </select>`
-                  : `<input id="modal-${f.name}" name="${f.name}" type="${f.type === "date" ? "datetime-local" : "text"}" ${f.required ? "required" : ""} />`
+                  : `<input id="modal-${f.name}" name="${f.name}" type="${f.type === "date" ? "datetime-local" : "text"}" value="${escapeHtml(f.defaultValue ?? "")}" ${f.required ? "required" : ""} />`
             }`,
             )
             .join("")}

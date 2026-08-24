@@ -87,8 +87,6 @@ export interface AuditTaskInput {
   resultado: AuditResult;
   risco: string;
   fato: string;
-  causa: string;
-  impacto: string;
   acao: string;
   responsavelId?: string | null;
   prazo?: string | null; // ISO datetime, from a <input type="datetime-local">
@@ -102,8 +100,6 @@ export const auditTask = (taskId: string, input: AuditTaskInput) =>
     p_resultado: input.resultado,
     p_risco: input.risco,
     p_fato: input.fato,
-    p_causa: input.causa,
-    p_impacto: input.impacto,
     p_acao: input.acao,
     p_responsavel_id: input.responsavelId ?? null,
     p_prazo: input.prazo ? new Date(input.prazo).toISOString() : null,

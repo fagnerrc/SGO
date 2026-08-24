@@ -71,8 +71,6 @@ export interface AuditFinding {
   resultado: AuditResult;
   risco: string;
   fato: string;
-  causa: string;
-  impacto: string;
   acao: string;
   responsavel_id: string | null;
   prazo: string | null;

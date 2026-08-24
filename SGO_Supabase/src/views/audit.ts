@@ -17,6 +17,17 @@ type AuditTab = "fila" | "achados";
 
 const RISCO_OPTIONS = ["Baixo", "Médio", "Alto", "Crítico"];
 const FINDING_STATUS_OPTIONS: AuditFindingStatus[] = ["Aberto", "Em andamento", "Concluído", "Validado", "Ineficaz", "Cancelado"];
+const ACAO_OPTIONS = [
+  "Corrigir informação incorreta",
+  "Complementar informação faltante",
+  "Refazer atividade",
+  "Corrigir lançamento/cadastro",
+  "Adequar procedimento",
+  "Revisar tarefas relacionadas",
+  "Escalar problema para gestor",
+  "Reatribuir tarefa",
+  "Anexar documentação pendente",
+];
 
 export async function renderAudit(root: HTMLElement): Promise<void> {
   root.innerHTML = `<div id="nav-mount"></div><div class="app-shell"><p>Carregando...</p></div>`;
@@ -107,9 +118,10 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
   }
 
   async function openAuditForm(taskId: string): Promise<void> {
+    const task = pending.find((t) => t.id === taskId);
     const values = await openFormModal({
       title: "Registrar auditoria",
-      description: "Fato, causa, impacto e ação corretiva são obrigatórios em ambos os resultados — servem de registro mesmo quando a tarefa é aprovada.",
+      description: "Fato e ação corretiva são obrigatórios em ambos os resultados — servem de registro mesmo quando a tarefa é aprovada.",
       fields: [
         {
           name: "resultado",
@@ -129,14 +141,19 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
           options: RISCO_OPTIONS.map((r) => ({ value: r, label: r })),
         },
         { name: "fato", label: "Fato observado", type: "textarea", required: true },
-        { name: "causa", label: "Causa", type: "textarea", required: true },
-        { name: "impacto", label: "Impacto", type: "textarea", required: true },
-        { name: "acao", label: "Ação corretiva", type: "textarea", required: true },
+        {
+          name: "acao",
+          label: "Ação corretiva",
+          type: "select",
+          required: true,
+          options: ACAO_OPTIONS.map((a) => ({ value: a, label: a })),
+        },
         {
           name: "responsavel_id",
           label: "Responsável pela ação corretiva (obrigatório se reprovada)",
           type: "select",
           options: profiles.map((p) => ({ value: p.id, label: p.full_name })),
+          defaultValue: task?.responsavel_id,
         },
         { name: "prazo", label: "Prazo da ação (obrigatório se reprovada)", type: "date" },
         { name: "evidencia", label: "Evidência / observação", type: "textarea" },
@@ -150,8 +167,6 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
         resultado: values.resultado as "Aprovada" | "Reprovada",
         risco: values.risco,
         fato: values.fato,
-        causa: values.causa,
-        impacto: values.impacto,
         acao: values.acao,
         responsavelId: values.responsavel_id || null,
         prazo: values.prazo || null,
@@ -237,8 +252,6 @@ function showFindingDetail(f: AuditFinding): void {
   overlay.className = "modal-overlay open";
   const rows: [string, string][] = [
     ["Fato observado", f.fato],
-    ["Causa", f.causa],
-    ["Impacto", f.impacto],
     ["Ação corretiva", f.acao],
   ];
   if (f.evidencia) rows.push(["Evidência / observação", f.evidencia]);
