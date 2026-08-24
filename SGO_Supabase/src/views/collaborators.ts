@@ -1,5 +1,6 @@
-import { adminListProfiles, createCollaborator, setProfileActive, setProfileCapacity, setProfileRole } from "../lib/profiles";
+import { adminListProfiles, createCollaborator, resetProfilePin, setProfileActive, setProfileCapacity, setProfileRole } from "../lib/profiles";
 import type { Profile } from "../lib/types";
+import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
 import { toastError, toastSuccess } from "./toast";
 
@@ -55,6 +56,8 @@ async function renderPage(shell: HTMLDivElement): Promise<void> {
       </form>
       <p id="new-collab-result" class="new-collab-result" hidden></p>
     </div>
+
+    <p id="pin-reset-result" class="new-collab-result" hidden></p>
 
     <div class="card table-card">
       <table class="data-table">
@@ -130,7 +133,10 @@ async function refreshRows(shell: HTMLDivElement): Promise<void> {
       </td>
       <td data-label="Capacidade (h/semana)" class="wrap-cell"><input type="number" class="capacity-input" data-profile-id="${p.id}" min="1" step="0.5" value="${p.capacidade_semanal}" /></td>
       <td data-label="Status"><span class="status-dot${p.active ? " is-active" : ""}">●</span>${p.active ? "Ativo" : "Inativo"}</td>
-      <td data-label="" class="wrap-cell actions-cell"><button class="link-button toggle-active-btn" data-profile-id="${p.id}" data-active="${p.active}">${p.active ? "Desativar" : "Reativar"}</button></td>
+      <td data-label="" class="wrap-cell actions-cell">
+        <button class="link-button toggle-active-btn" data-profile-id="${p.id}" data-active="${p.active}">${p.active ? "Desativar" : "Reativar"}</button>
+        <button class="link-button reset-pin-btn" data-profile-id="${p.id}" data-name="${escapeAttr(p.full_name)}">Redefinir PIN</button>
+      </td>
     </tr>`,
     )
     .join("");
@@ -177,10 +183,35 @@ async function refreshRows(shell: HTMLDivElement): Promise<void> {
       }
     });
   });
+
+  const pinResultEl = shell.querySelector<HTMLParagraphElement>("#pin-reset-result")!;
+  rowsEl.querySelectorAll<HTMLButtonElement>(".reset-pin-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const name = btn.dataset.name!;
+      const confirmed = await openFormModal({
+        title: "Redefinir PIN",
+        description: `Isso gera um novo PIN temporário para ${name} e desconecta a pessoa imediatamente de qualquer sessão ativa. Confirma?`,
+        fields: [],
+        confirmLabel: "Redefinir PIN",
+      });
+      if (!confirmed) return;
+      try {
+        const pin = await resetProfilePin(btn.dataset.profileId!);
+        pinResultEl.hidden = false;
+        pinResultEl.textContent = `PIN redefinido para ${name}: ${pin} — anote agora, ele só aparece essa vez. Peça para a pessoa trocar o PIN no primeiro acesso.`;
+      } catch (err) {
+        toastError((err as Error).message);
+      }
+    });
+  });
 }
 
 function escapeHtml(value: string): string {
   const div = document.createElement("div");
   div.textContent = value;
   return div.innerHTML;
+}
+
+function escapeAttr(value: string): string {
+  return escapeHtml(value).replace(/"/g, "&quot;");
 }

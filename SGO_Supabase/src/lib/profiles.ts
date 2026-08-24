@@ -75,3 +75,18 @@ export const setProfileRole = (profileId: string, role: string) =>
 
 export const setProfileCapacity = (profileId: string, capacidadeSemanal: number) =>
   callProfileAction("set_profile_capacity", { p_profile_id: profileId, p_capacidade_semanal: capacidadeSemanal });
+
+function generateTemporaryPin(): string {
+  return String(Math.floor(1000 + Math.random() * 9000)); // 4-digit temp PIN, same scheme as admin-create-user
+}
+
+// set_pin() already allows a privileged caller to set ANY profile's PIN
+// (see 0014_fix_pgcrypto_search_path.sql) and revokes that profile's
+// existing sessions as a side effect — an admin-triggered reset forces an
+// immediate logout, same as the old system's resetUserPinServer.
+export async function resetProfilePin(profileId: string): Promise<string> {
+  const pin = generateTemporaryPin();
+  const { error } = await getClient().rpc("set_pin", { p_profile_id: profileId, p_new_pin: pin });
+  if (error) throwSupabaseError(error);
+  return pin;
+}
