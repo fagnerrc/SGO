@@ -929,10 +929,26 @@ a {
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
 }
+/* Grid items default to min-width:auto, so their content's intrinsic
+   size can force a track wider than its 1fr share — normally invisible,
+   but two Chart.js canvases in the same row (Relatórios: prioridade +
+   área) feed each other's resize measurement into a runaway "blowout"
+   that pushes the whole page into horizontal scroll. min-width:0 is the
+   standard fix: it lets the track actually shrink to its fr share. */
+.dashboard-grid > .card {
+  min-width: 0;
+}
 
 .chart-box {
   height: 220px;
   position: relative;
+}
+/* Chart.js sets the canvas's own width via inline style in pixels, which
+   wins the cascade over any stylesheet `width` rule — but max-width still
+   caps the used value regardless of how width was set, so this is what
+   actually stops a canvas from overflowing a correctly-sized container. */
+.chart-box canvas {
+  max-width: 100%;
 }
 .chart-box-sm {
   height: 180px;
@@ -1088,6 +1104,14 @@ a {
 }
 .toolbar .btn-outline {
   height: 38px;
+  white-space: nowrap;
+}
+.toolbar-inline-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
   white-space: nowrap;
 }
 
