@@ -6,8 +6,9 @@
 export interface ModalField {
   name: string;
   label: string;
-  type?: "text" | "textarea";
+  type?: "text" | "textarea" | "select" | "date";
   required?: boolean;
+  options?: { value: string; label: string }[]; // for type: "select"
 }
 
 export function openFormModal(options: {
@@ -36,7 +37,12 @@ export function openFormModal(options: {
             ${
               f.type === "textarea"
                 ? `<textarea id="modal-${f.name}" name="${f.name}" rows="3" ${f.required ? "required" : ""}></textarea>`
-                : `<input id="modal-${f.name}" name="${f.name}" type="text" ${f.required ? "required" : ""} />`
+                : f.type === "select"
+                  ? `<select id="modal-${f.name}" name="${f.name}" ${f.required ? "required" : ""}>
+                      <option value="">Selecione...</option>
+                      ${(f.options ?? []).map((o) => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join("")}
+                    </select>`
+                  : `<input id="modal-${f.name}" name="${f.name}" type="${f.type === "date" ? "datetime-local" : "text"}" ${f.required ? "required" : ""} />`
             }`,
             )
             .join("")}
@@ -65,7 +71,7 @@ export function openFormModal(options: {
       event.preventDefault();
       const values: Record<string, string> = {};
       for (const f of options.fields) {
-        values[f.name] = (form.elements.namedItem(f.name) as HTMLInputElement | HTMLTextAreaElement).value.trim();
+        values[f.name] = (form.elements.namedItem(f.name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value.trim();
       }
       cleanup(values);
     });

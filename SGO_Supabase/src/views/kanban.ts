@@ -1,6 +1,6 @@
 import { applyTaskFilters, DEFAULT_FILTERS, type TaskFilterState } from "../lib/taskFilters";
 import { listCompanyProfiles } from "../lib/profiles";
-import { approvalWaitTask, auditTask, cancelTask, completeTask, listMyTasks, rejectTask, startTask, waitTask } from "../lib/tasks";
+import { approvalWaitTask, cancelTask, completeTask, listMyTasks, rejectTask, startTask, waitTask } from "../lib/tasks";
 import type { Profile, Task, TaskStatus } from "../lib/types";
 import { initials, priorityBadge } from "./badges";
 import { renderFilterBar } from "./filterBar";
@@ -120,15 +120,6 @@ function transitionsFor(task: Task): TransitionDef[] {
         return true;
       },
     });
-  const addAudit = () =>
-    options.push({
-      target: "Auditada",
-      perform: async (taskId) => {
-        await auditTask(taskId);
-        return true;
-      },
-    });
-
   switch (task.status) {
     case "Em andamento":
       addWait();
@@ -148,11 +139,10 @@ function transitionsFor(task: Task): TransitionDef[] {
       addResume();
       addCancel();
       break;
-    case "Concluída":
-      addAudit();
-      break;
     default:
-      break; // Auditada / Cancelada: nothing legal, no drag handle.
+      break; // Concluída (audited from the dedicated Auditoria screen now,
+      // not a Kanban drag — see 0030_audit_findings.sql) / Auditada /
+      // Cancelada: nothing legal here, no drag handle.
   }
   return options;
 }

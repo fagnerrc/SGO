@@ -6,6 +6,7 @@ import { renderTaskCreate } from "./views/taskCreate";
 import { renderDashboard } from "./views/dashboard";
 import { renderKanban } from "./views/kanban";
 import { renderApprovals } from "./views/approvals";
+import { renderAudit } from "./views/audit";
 import { renderCollaborators } from "./views/collaborators";
 import { renderSettings } from "./views/settings";
 import { renderProcesses } from "./views/processes";
@@ -62,6 +63,11 @@ function route(root: HTMLElement): void {
 
   if (hash === "#/approvals") {
     renderApprovals(root);
+    return;
+  }
+
+  if (hash === "#/audit") {
+    renderAudit(root);
     return;
   }
 

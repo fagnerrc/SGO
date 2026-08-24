@@ -60,3 +60,25 @@ export interface Profile {
   active: boolean;
   capacidade_semanal: number;
 }
+
+export type AuditResult = "Aprovada" | "Reprovada";
+
+export type AuditFindingStatus = "Aberto" | "Em andamento" | "Concluído" | "Validado" | "Ineficaz" | "Cancelado";
+
+export interface AuditFinding {
+  id: string;
+  task_id: string;
+  resultado: AuditResult;
+  risco: string;
+  fato: string;
+  causa: string;
+  impacto: string;
+  acao: string;
+  responsavel_id: string | null;
+  prazo: string | null;
+  evidencia: string;
+  status: AuditFindingStatus;
+  criado_por: string;
+  criado_em: string;
+  tasks?: { code: string | null; titulo: string } | null;
+}

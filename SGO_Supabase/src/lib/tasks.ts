@@ -1,5 +1,5 @@
 import { getClient, throwSupabaseError } from "./supabase";
-import type { ChecklistItem, Task } from "./types";
+import type { AuditFinding, AuditFindingStatus, AuditResult, ChecklistItem, Task } from "./types";
 
 // Every mutation function below sends a fresh operation_id, so a retried
 // call (flaky network, a double-click) is safely idempotent server-side —
@@ -83,7 +83,60 @@ export const waitTask = (taskId: string, aguardandoQuem: string, motivoEspera = 
     p_motivo_espera: motivoEspera,
   });
 
-export const auditTask = (taskId: string) => callAction("audit_task", { p_task_id: taskId, p_operation_id: newOperationId() });
+export interface AuditTaskInput {
+  resultado: AuditResult;
+  risco: string;
+  fato: string;
+  causa: string;
+  impacto: string;
+  acao: string;
+  responsavelId?: string | null;
+  prazo?: string | null; // ISO datetime, from a <input type="datetime-local">
+  evidencia?: string;
+}
+
+export const auditTask = (taskId: string, input: AuditTaskInput) =>
+  callAction("audit_task", {
+    p_task_id: taskId,
+    p_operation_id: newOperationId(),
+    p_resultado: input.resultado,
+    p_risco: input.risco,
+    p_fato: input.fato,
+    p_causa: input.causa,
+    p_impacto: input.impacto,
+    p_acao: input.acao,
+    p_responsavel_id: input.responsavelId ?? null,
+    p_prazo: input.prazo ? new Date(input.prazo).toISOString() : null,
+    p_evidencia: input.evidencia ?? "",
+  });
+
+// A task audited either way (approved or reproved) leaves 'Concluída'
+// immediately — Aprovada moves it to 'Auditada', Reprovada reopens it to
+// 'Reprovada/devolvida' (see audit_task() in 0030_audit_findings.sql). So
+// "pending audit" is simply every task still sitting in 'Concluída',
+// no separate flag needed.
+export async function listPendingAudits(): Promise<Task[]> {
+  const { data, error } = await getClient()
+    .from("tasks")
+    .select("*")
+    .eq("status", "Concluída")
+    .eq("excluido", false)
+    .order("concluido_em", { ascending: true });
+  if (error) throwSupabaseError(error);
+  return data as Task[];
+}
+
+export async function listAuditFindings(): Promise<AuditFinding[]> {
+  const { data, error } = await getClient()
+    .from("audit_findings")
+    .select("*, tasks(code, titulo)")
+    .order("criado_em", { ascending: false });
+  if (error) throwSupabaseError(error);
+  return data as AuditFinding[];
+}
+
+export const setAuditFindingStatus = (findingId: string, status: AuditFindingStatus) =>
+  callAction("set_audit_finding_status", { p_finding_id: findingId, p_status: status });
 
 export const approvalWaitTask = (taskId: string) => callAction("approval_wait_task", { p_task_id: taskId, p_operation_id: newOperationId() });
 
