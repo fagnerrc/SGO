@@ -22,7 +22,7 @@
   --radius: 16px;
   --radius-lg: 22px;
   --sidebar-width: 240px;
-  --topbar-height: 68px;
+  --topbar-height: 76px;
 
   --danger: #c0522e;
 
@@ -315,10 +315,21 @@ a {
   z-index: 40;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 1.25rem;
   padding: 0 1.75rem;
-  background: var(--surface);
+  background: linear-gradient(180deg, var(--surface) 0%, color-mix(in srgb, var(--primary) 2.5%, var(--surface)) 100%);
   border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 var(--border), 0 8px 20px -16px rgba(30, 42, 74, 0.25);
+}
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 55%, var(--tile-lavender-fg)) 50%, transparent 100%);
+  opacity: 0.55;
 }
 @media (max-width: 860px) {
   .topbar {
@@ -327,18 +338,60 @@ a {
   }
 }
 
+.topbar-greeting {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 0 0 auto;
+  padding-right: 1.1rem;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+.topbar-greeting-text {
+  font-size: 0.92rem;
+  font-weight: 750;
+  color: var(--heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topbar-greeting-clock {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+@media (max-width: 1300px) {
+  .topbar-greeting-clock {
+    display: none;
+  }
+}
+@media (max-width: 860px) {
+  .topbar-greeting {
+    display: none;
+  }
+}
+
 .topbar-search {
   position: relative;
   flex: 1;
+  min-width: 0;
   max-width: 420px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
-  height: 40px;
+  padding: 0 8px 0 14px;
+  height: 42px;
   background: var(--surface-strong);
+  border: 1px solid transparent;
   border-radius: 999px;
   color: var(--muted);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.topbar-search:focus-within {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .topbar-search svg {
   width: 16px;
@@ -353,6 +406,24 @@ a {
   font-size: 13px;
   color: var(--text);
   width: 100%;
+  min-width: 0;
+}
+.topbar-search-hint {
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .topbar-search-hint {
+    display: none;
+  }
 }
 .topbar-search-results {
   position: absolute;
@@ -387,6 +458,11 @@ a {
   color: var(--text);
   display: grid;
   place-items: center;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.topbar-icon-btn:hover {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
 }
 .topbar-icon-btn svg {
   width: 18px;
@@ -408,17 +484,39 @@ a {
   place-items: center;
   line-height: 1;
 }
+.topbar-badge-pulse::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--danger);
+  animation: topbar-badge-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes topbar-badge-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
 .topbar-user-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   border: none;
   background: none;
   padding: 4px 6px 4px 4px;
   border-radius: 999px;
+  transition: background 0.15s ease;
 }
 .topbar-user-btn:hover {
   background: var(--surface-strong);
+}
+.topbar-user-btn .avatar {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--primary), 0 0 0 5px color-mix(in srgb, var(--primary) 25%, transparent);
 }
 .topbar-user-btn svg {
   width: 14px;
@@ -1717,14 +1815,20 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0.5rem 0.9rem;
+  padding: 0.55rem 1rem;
   border: none;
   border-radius: 999px;
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
   color: #fff;
   font-size: 0.82rem;
   font-weight: 700;
   white-space: nowrap;
+  box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--primary) 65%, transparent);
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+}
+.quick-start-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px -6px color-mix(in srgb, var(--primary) 70%, transparent);
 }
 .quick-start-btn svg {
   width: 15px;

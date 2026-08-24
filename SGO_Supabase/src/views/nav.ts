@@ -30,6 +30,32 @@ export async function getCachedProfile(): Promise<Profile> {
 // each time renderNav() runs for a genuinely new page load (see below).
 let searchTasksPromise: Promise<Task[]> | null = null;
 
+// The greeting/clock ticks against whatever nav-mount is currently in the
+// DOM — renderNav() replaces that container on every navigation, so the
+// old interval has to be torn down each time or it just keeps writing
+// into detached nodes forever.
+let greetingInterval: ReturnType<typeof setInterval> | null = null;
+
+// Registered once, not per-render: this listens on `document`, which
+// outlives every nav-mount replacement, so re-adding it on each
+// renderNav() call would stack up a duplicate handler per navigation.
+let searchShortcutBound = false;
+
+function greetingText(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return "Boa madrugada";
+  if (hour < 12) return "Bom dia";
+  if (hour < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
+function clockText(): string {
+  const now = new Date();
+  const date = now.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+  const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `${date.charAt(0).toUpperCase()}${date.slice(1)} · ${time}`;
+}
+
 const ICONS: Record<PageKey, string> = {
   dashboard:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>',
@@ -62,6 +88,10 @@ const CHEVRON_ICON =
 
 export async function renderNav(root: HTMLElement, active: PageKey): Promise<void> {
   searchTasksPromise = null;
+  if (greetingInterval) {
+    clearInterval(greetingInterval);
+    greetingInterval = null;
+  }
 
   const branding = await getBranding().catch(() => null);
   if (branding) applyBranding(branding);
@@ -132,9 +162,14 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
       </nav>
     </aside>
     <header class="topbar">
+      <div class="topbar-greeting">
+        <span class="topbar-greeting-text">${greetingText()}${profile ? `, ${escapeHtml(profile.full_name.split(" ")[0])}` : ""}</span>
+        <span class="topbar-greeting-clock" id="topbar-clock">${clockText()}</span>
+      </div>
       <div class="topbar-search">
         ${SEARCH_ICON}
         <input id="topbar-search-input" type="text" placeholder="Buscar tarefa por título ou código..." autocomplete="off" />
+        <kbd class="topbar-search-hint" id="topbar-search-hint">${/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘K" : "Ctrl K"}</kbd>
         <div id="topbar-search-results" class="topbar-search-results" hidden></div>
       </div>
       <div class="topbar-actions">
@@ -188,8 +223,28 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
   setupDropdown(root, "#notif-btn", "#notif-panel", () => loadNotifications(root));
   setupDropdown(root, "#user-btn", "#user-panel");
   setupSearch(root);
+  void loadNotifications(root); // populate the badge right away, not only once the bell is clicked
 
   root.querySelector("#quick-start-btn")!.addEventListener("click", () => void quickStartTimer(profile));
+
+  const clockEl = root.querySelector<HTMLElement>("#topbar-clock");
+  greetingInterval = setInterval(() => {
+    if (clockEl) clockEl.textContent = clockText();
+  }, 20000);
+
+  if (!searchShortcutBound) {
+    searchShortcutBound = true;
+    document.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        const input = document.querySelector<HTMLInputElement>("#topbar-search-input");
+        if (input) {
+          event.preventDefault();
+          input.focus();
+          input.select();
+        }
+      }
+    });
+  }
 }
 
 // "Iniciar tarefa" — the old system's fastest path to registering work:
@@ -291,15 +346,24 @@ function updateBadge(root: HTMLElement, notifications: AppNotification[]): void 
   const badge = root.querySelector<HTMLElement>("#notif-badge")!;
   const unread = notifications.filter((n) => !n.read).length;
   badge.hidden = unread === 0;
+  badge.classList.toggle("topbar-badge-pulse", unread > 0);
   if (unread > 0) badge.textContent = unread > 9 ? "9+" : String(unread);
 }
 
 function setupSearch(root: HTMLElement): void {
   const input = root.querySelector<HTMLInputElement>("#topbar-search-input")!;
   const resultsEl = root.querySelector<HTMLElement>("#topbar-search-results")!;
+  const hintEl = root.querySelector<HTMLElement>("#topbar-search-hint");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
 
+  const updateHint = () => {
+    if (hintEl) hintEl.hidden = document.activeElement === input || input.value.length > 0;
+  };
+  input.addEventListener("focus", updateHint);
+  input.addEventListener("blur", updateHint);
+
   input.addEventListener("input", () => {
+    updateHint();
     if (debounceHandle) clearTimeout(debounceHandle);
     const query = input.value.trim().toLowerCase();
     if (!query) {
@@ -320,7 +384,10 @@ function setupSearch(root: HTMLElement): void {
     resultsEl.hidden = true;
   });
   resultsEl.addEventListener("click", (event) => event.stopPropagation());
-  input.addEventListener("click", (event) => event.stopPropagation());
+  input.addEventListener("click", (event) => {
+    event.stopPropagation();
+    updateHint();
+  });
 }
 
 function renderSearchResults(resultsEl: HTMLElement, matches: Task[], query: string): void {
