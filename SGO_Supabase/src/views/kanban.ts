@@ -219,13 +219,13 @@ function renderBoard(
   for (const task of tasks) byStatus.get(task.status)?.push(task);
 
   boardMount.innerHTML = `
-    <div class="kanban-board">
+    <div class="kanban-board" style="--kanban-cols:${COLUMNS.length}">
       ${COLUMNS.map((status) => {
         const items = byStatus.get(status)!;
         return `
         <div class="kanban-column${TERMINAL.has(status) ? " frozen" : ""}" data-status="${status}">
           <div class="kanban-column-header">
-            <span>${escapeHtml(status)}</span>
+            <span class="kanban-column-title" title="${escapeHtml(status)}">${escapeHtml(status)}</span>
             <span class="kanban-column-count">${items.length}</span>
           </div>
           <div class="kanban-column-cards">
@@ -302,7 +302,7 @@ function renderCard(task: Task, profileById: Map<string, Profile>): string {
         <span class="kanban-card-code">${task.code ?? ""}</span>
         ${priorityBadge(task.prioridade)}
       </div>
-      <span class="kanban-card-title">${escapeHtml(task.titulo)}</span>
+      <span class="kanban-card-title" title="${escapeHtml(task.titulo)}">${escapeHtml(task.titulo)}</span>
       ${
         task.progresso > 0
           ? `<div class="kanban-card-progress"><span style="width:${task.progresso}%"></span></div>`

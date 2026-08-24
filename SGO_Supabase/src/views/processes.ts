@@ -130,6 +130,10 @@ function renderPage(shell: HTMLDivElement, processes: Process[], profiles: Profi
 
     <div class="card table-card">
       <table class="data-table">
+        <colgroup>
+          <col style="width:20%" /><col style="width:11%" /><col style="width:15%" /><col style="width:8%" />
+          <col style="width:10%" /><col style="width:12%" /><col style="width:9%" /><col style="width:15%" />
+        </colgroup>
         <thead>
           <tr><th>Nome</th><th>Área</th><th>Aprovador</th><th>SLA</th><th>Risco</th><th>Recorrência</th><th>Status</th><th></th></tr>
         </thead>
@@ -238,14 +242,14 @@ function renderPage(shell: HTMLDivElement, processes: Process[], profiles: Profi
     .map(
       (p) => `
     <tr data-process-id="${p.id}">
-      <td>${escapeHtml(p.name)}${p.codigo ? ` <span class="task-card-code">${escapeHtml(p.codigo)}</span>` : ""}</td>
-      <td>${escapeHtml(p.area ?? "—")}</td>
-      <td>${p.aprovador_id ? escapeHtml(profileById.get(p.aprovador_id)?.full_name ?? "—") : "—"}</td>
-      <td>${p.sla_horas ?? "—"}${p.sla_horas ? "h" : ""}</td>
-      <td>${riskBadge(p.risco)}</td>
-      <td>${escapeHtml(p.recorrencia)}</td>
-      <td>${p.ativo ? "Ativo" : "Inativo"}</td>
-      <td>
+      <td class="cell-primary" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}${p.codigo ? ` <span class="task-card-code">${escapeHtml(p.codigo)}</span>` : ""}</td>
+      <td data-label="Área" title="${escapeHtml(p.area ?? "—")}">${escapeHtml(p.area ?? "—")}</td>
+      <td data-label="Aprovador" title="${p.aprovador_id ? escapeHtml(profileById.get(p.aprovador_id)?.full_name ?? "—") : "—"}">${p.aprovador_id ? escapeHtml(profileById.get(p.aprovador_id)?.full_name ?? "—") : "—"}</td>
+      <td data-label="SLA">${p.sla_horas ?? "—"}${p.sla_horas ? "h" : ""}</td>
+      <td data-label="Risco" class="wrap-cell">${riskBadge(p.risco)}</td>
+      <td data-label="Recorrência">${escapeHtml(p.recorrencia)}</td>
+      <td data-label="Status"><span class="status-dot${p.ativo ? " is-active" : ""}">●</span>${p.ativo ? "Ativo" : "Inativo"}</td>
+      <td data-label="" class="wrap-cell actions-cell">
         <button class="link-button" data-edit="${p.id}">editar</button>
         <button class="link-button" data-toggle="${p.id}" data-active="${p.ativo}">${p.ativo ? "desativar" : "reativar"}</button>
       </td>

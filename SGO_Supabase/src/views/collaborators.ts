@@ -58,8 +58,12 @@ async function renderPage(shell: HTMLDivElement): Promise<void> {
 
     <div class="card table-card">
       <table class="data-table">
+        <colgroup>
+          <col style="width:19%" /><col style="width:23%" /><col style="width:11%" />
+          <col style="width:15%" /><col style="width:13%" /><col style="width:9%" /><col style="width:10%" />
+        </colgroup>
         <thead>
-          <tr><th>Nome</th><th>E-mail</th><th>Área</th><th>Perfil</th><th>Capacidade (h/semana)</th><th>Status</th><th></th></tr>
+          <tr><th>Nome</th><th>E-mail</th><th>Área</th><th>Perfil</th><th title="Capacidade (h/semana)">Capacidade (h/sem.)</th><th>Status</th><th></th></tr>
         </thead>
         <tbody id="collab-rows"></tbody>
       </table>
@@ -114,19 +118,19 @@ async function refreshRows(shell: HTMLDivElement): Promise<void> {
     .map(
       (p) => `
     <tr data-profile-id="${p.id}">
-      <td>${escapeHtml(p.full_name)}</td>
-      <td>${escapeHtml(p.email)}</td>
-      <td>${escapeHtml(p.area || "—")}</td>
-      <td>
+      <td class="cell-primary" title="${escapeHtml(p.full_name)}">${escapeHtml(p.full_name)}</td>
+      <td data-label="E-mail" class="cell-secondary" title="${escapeHtml(p.email)}">${escapeHtml(p.email)}</td>
+      <td data-label="Área" title="${escapeHtml(p.area || "—")}">${escapeHtml(p.area || "—")}</td>
+      <td data-label="Perfil" class="wrap-cell">
         <select class="role-select" data-profile-id="${p.id}">
           ${Object.entries(ROLE_LABELS)
             .map(([value, label]) => `<option value="${value}"${value === p.role ? " selected" : ""}>${label}</option>`)
             .join("")}
         </select>
       </td>
-      <td><input type="number" class="capacity-input" data-profile-id="${p.id}" min="1" step="0.5" value="${p.capacidade_semanal}" style="width:70px" /></td>
-      <td>${p.active ? "Ativo" : "Inativo"}</td>
-      <td><button class="link-button toggle-active-btn" data-profile-id="${p.id}" data-active="${p.active}">${p.active ? "Desativar" : "Reativar"}</button></td>
+      <td data-label="Capacidade (h/semana)" class="wrap-cell"><input type="number" class="capacity-input" data-profile-id="${p.id}" min="1" step="0.5" value="${p.capacidade_semanal}" /></td>
+      <td data-label="Status"><span class="status-dot${p.active ? " is-active" : ""}">●</span>${p.active ? "Ativo" : "Inativo"}</td>
+      <td data-label="" class="wrap-cell actions-cell"><button class="link-button toggle-active-btn" data-profile-id="${p.id}" data-active="${p.active}">${p.active ? "Desativar" : "Reativar"}</button></td>
     </tr>`,
     )
     .join("");

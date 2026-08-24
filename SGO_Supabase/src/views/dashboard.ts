@@ -115,7 +115,7 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
                 (w) => `
             <div class="workload-row">
               <span class="workload-avatar" title="${escapeHtml(w.name)}">${initials(w.name)}</span>
-              <span class="workload-name">${escapeHtml(w.name)}</span>
+              <span class="workload-name" title="${escapeHtml(w.name)}">${escapeHtml(w.name)}</span>
               <div class="workload-bar-track"><div class="workload-bar-fill" style="width:${Math.min(w.occupancyPercent, 100)}%;background:${occupancyColor(w.occupancyPercent)}"></div></div>
               <span class="workload-count" style="color:${occupancyColor(w.occupancyPercent)}">${w.occupancyPercent}%</span>
             </div>`,

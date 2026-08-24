@@ -62,6 +62,10 @@ body {
   font-family: var(--font);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  /* Belt-and-suspenders: the page must never grow a horizontal
+     scrollbar, no matter what a stray absolutely-positioned panel
+     does near a viewport edge. Vertical scroll is untouched. */
+  overflow-x: hidden;
 }
 
 h1, h2, h3, h4, p {
@@ -1009,10 +1013,10 @@ a {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   width: max-content;
   max-width: 100%;
-  overflow-x: auto;
   margin-bottom: 1.1rem;
   padding: 4px;
   border: 1px solid var(--border);
@@ -1092,31 +1096,27 @@ a {
 /* ---------------------------------------------------------------- */
 
 .kanban-board {
-  display: flex;
-  gap: 1rem;
-  overflow-x: auto;
-  padding-bottom: 0.25rem;
+  display: grid;
+  grid-template-columns: repeat(var(--kanban-cols, 7), minmax(0, 1fr));
+  gap: 0.6rem;
   align-items: start;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  width: 100%;
 }
-.kanban-board::-webkit-scrollbar {
-  height: 6px;
-}
-.kanban-board::-webkit-scrollbar-track {
-  background: transparent;
-}
-.kanban-board::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 999px;
+/* All N columns fit one row comfortably on wide desktops. Below that,
+   forcing all 7 into one row leaves each column too narrow to read —
+   wrap to as many per row as actually fit instead (still full-width,
+   still zero horizontal scroll, just more vertical space used). */
+@media (max-width: 1600px) {
+  .kanban-board {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
 }
 .kanban-column {
-  min-width: 260px;
-  flex: 0 0 260px;
+  min-width: 0;
   background: var(--surface-strong);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.8rem;
+  padding: 0.6rem;
   transition: background 0.12s ease, box-shadow 0.12s ease;
 }
 .kanban-column.drag-over {
@@ -1130,34 +1130,43 @@ a {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.82rem;
+  gap: 0.35rem;
+  font-size: 0.76rem;
   font-weight: 700;
   color: var(--heading);
-  margin-bottom: 0.7rem;
+  margin-bottom: 0.6rem;
+}
+.kanban-column-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .kanban-column-count {
+  flex: 0 0 auto;
   color: var(--muted);
   font-weight: 600;
   background: var(--surface);
   border-radius: 999px;
-  padding: 0.1rem 0.5rem;
-  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.68rem;
 }
 .kanban-column-cards {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-  min-height: 60px;
+  gap: 0.5rem;
+  min-height: 40px;
 }
 .kanban-card {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.3rem;
   text-align: left;
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 0.65rem 0.75rem;
+  padding: 0.55rem 0.6rem;
   box-shadow: var(--shadow-sm);
   cursor: grab;
 }
@@ -1169,17 +1178,26 @@ a {
 }
 .kanban-card-top {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.3rem;
 }
 .kanban-card-code {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .kanban-card-title {
-  font-size: 0.86rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.8rem;
   font-weight: 600;
+  line-height: 1.3;
   color: var(--heading);
 }
 .kanban-card-progress {
@@ -1195,23 +1213,31 @@ a {
 }
 .kanban-card-footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.72rem;
+  gap: 0.3rem;
+  font-size: 0.66rem;
   color: var(--muted);
+  min-width: 0;
 }
 .kanban-card-avatar {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--primary-soft);
   color: var(--primary-dark);
   display: grid;
   place-items: center;
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   font-weight: 700;
   flex: 0 0 auto;
+}
+.kanban-card-deadline {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .kanban-card-deadline.overdue {
   color: var(--danger);
@@ -1219,11 +1245,12 @@ a {
 }
 .kanban-move-select {
   width: 100%;
-  margin-top: 0.3rem;
-  padding: 0.35rem 0.5rem;
+  min-width: 0;
+  margin-top: 0.25rem;
+  padding: 0.3rem 0.35rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 0.78rem;
+  font-size: 0.68rem;
   background: var(--surface);
   color: var(--text);
 }
@@ -1260,11 +1287,11 @@ a {
 /* ---------------------------------------------------------------- */
 
 .table-card {
-  overflow-x: auto;
   padding: 0;
 }
 .data-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.86rem;
 }
@@ -1280,11 +1307,21 @@ a {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .data-table td {
   padding: 0.75rem 0.9rem;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.data-table td.wrap-cell {
+  white-space: normal;
+  overflow: visible;
 }
 .data-table tbody tr:last-child td {
   border-bottom: 0;
@@ -1292,12 +1329,82 @@ a {
 .data-table tbody tr:hover td {
   background: var(--surface-strong);
 }
+.data-table select,
+.data-table input {
+  max-width: 100%;
+}
 .data-table select {
   padding: 0.3rem 0.4rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
   color: var(--text);
+}
+.data-table .cell-primary {
+  font-weight: 700;
+  color: var(--heading);
+}
+.data-table .cell-secondary {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.status-dot {
+  color: var(--muted);
+  font-size: 0.6em;
+  margin-right: 0.35em;
+}
+.status-dot.is-active {
+  color: var(--primary);
+}
+
+/* Below this width the sidebar already collapses to an overlay (see the
+   860px breakpoint above) and there isn't enough room left for a
+   multi-column table without either shrinking text unreadably or
+   scrolling sideways — neither is acceptable, so each row becomes a
+   stacked label/value card instead. */
+@media (max-width: 860px) {
+  .data-table,
+  .data-table thead,
+  .data-table tbody,
+  .data-table tr,
+  .data-table td {
+    display: block;
+    width: 100% !important;
+  }
+  .data-table thead {
+    display: none;
+  }
+  .data-table tbody tr {
+    padding: 0.9rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table tbody tr:last-child {
+    border-bottom: none;
+  }
+  .data-table td {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.3rem 0;
+    border: none;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  .data-table td[data-label]::before {
+    content: attr(data-label);
+    font-size: 0.66rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .data-table td.actions-cell {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 0.2rem;
+  }
 }
 
 .new-collab-result {
