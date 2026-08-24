@@ -22,7 +22,7 @@
   --radius: 16px;
   --radius-lg: 22px;
   --sidebar-width: 240px;
-  --topbar-height: 76px;
+  --topbar-height: 92px;
 
   --danger: #c0522e;
 
@@ -359,7 +359,6 @@ a {
   font-size: 0.72rem;
   color: var(--muted);
   white-space: nowrap;
-  text-transform: capitalize;
 }
 @media (max-width: 1300px) {
   .topbar-greeting-clock {
