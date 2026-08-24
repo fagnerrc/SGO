@@ -1,11 +1,12 @@
 import { Chart, registerables } from "chart.js";
-import { applyTaskFilters, type TaskFilterState } from "../lib/taskFilters";
+import { applyTaskFilters, DEFAULT_FILTERS, type TaskFilterState } from "../lib/taskFilters";
 import { listCompanyProfiles } from "../lib/profiles";
-import { listMyTasks } from "../lib/tasks";
+import { listDeletedTasks, listMyTasks, restoreTask } from "../lib/tasks";
 import type { Profile, Task } from "../lib/types";
 import { priorityBadge, statusBadge, STATUS_CHART_COLORS } from "./badges";
 import { renderFilterBar } from "./filterBar";
 import { renderNav } from "./nav";
+import { toastError, toastSuccess } from "./toast";
 
 Chart.register(...registerables);
 
@@ -35,8 +36,15 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
     <div class="app-shell">
       <header class="app-header">
         <h1>Minhas tarefas</h1>
-        <button id="new-task-btn" class="btn-primary">+ Nova tarefa</button>
+        <div class="app-header-actions">
+          <button id="trash-toggle-btn" class="link-button">Ver excluídas</button>
+          <button id="new-task-btn" class="btn-primary">+ Nova tarefa</button>
+        </div>
       </header>
+      <div id="trash-panel" class="card" hidden>
+        <h3>Tarefas excluídas</h3>
+        <div id="trash-list"><p>Carregando...</p></div>
+      </div>
       <div id="filter-mount"></div>
       <div class="card">
         <h3>Distribuição por status</h3>
@@ -65,6 +73,69 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
     listEl.textContent = `Não foi possível carregar as tarefas: ${(err as Error).message}`;
     return;
   }
+
+  const trashBtn = root.querySelector<HTMLButtonElement>("#trash-toggle-btn")!;
+  const trashPanel = root.querySelector<HTMLDivElement>("#trash-panel")!;
+  const trashListEl = root.querySelector<HTMLDivElement>("#trash-list")!;
+  let trashLoaded = false;
+
+  async function loadTrash(): Promise<void> {
+    trashListEl.innerHTML = "<p>Carregando...</p>";
+    let deleted: Task[];
+    try {
+      deleted = await listDeletedTasks();
+    } catch (err) {
+      trashListEl.innerHTML = `<p class="error">${escapeHtml((err as Error).message)}</p>`;
+      return;
+    }
+    trashBtn.textContent = `Ver excluídas (${deleted.length})`;
+    if (deleted.length === 0) {
+      trashListEl.innerHTML = "<p>Nenhuma tarefa excluída.</p>";
+      return;
+    }
+    trashListEl.innerHTML = deleted
+      .map(
+        (t) => `
+      <div class="approval-card" data-task-id="${t.id}">
+        <div>
+          <span class="task-card-code">${t.code ?? ""} ${priorityBadge(t.prioridade)}</span>
+          <span class="task-card-title">${escapeHtml(t.titulo)}</span>
+        </div>
+        <div class="approval-actions">
+          <button class="btn-outline restore-task-btn" data-task-id="${t.id}">Restaurar</button>
+        </div>
+      </div>`,
+      )
+      .join("");
+    trashListEl.querySelectorAll<HTMLButtonElement>(".restore-task-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await restoreTask(btn.dataset.taskId!);
+          toastSuccess("Tarefa restaurada.");
+          tasks = await listMyTasks();
+          renderList(applyTaskFilters(tasks, currentFilterState));
+          await loadTrash();
+        } catch (err) {
+          toastError((err as Error).message);
+        }
+      });
+    });
+  }
+
+  trashBtn.addEventListener("click", async () => {
+    trashPanel.hidden = !trashPanel.hidden;
+    if (!trashPanel.hidden && !trashLoaded) {
+      trashLoaded = true;
+      await loadTrash();
+    }
+  });
+  void listDeletedTasks()
+    .then((d) => {
+      if (d.length > 0) trashBtn.textContent = `Ver excluídas (${d.length})`;
+    })
+    .catch(() => {});
+
+  let currentFilterState: TaskFilterState = { ...DEFAULT_FILTERS };
 
   const chartCtx = root.querySelector<HTMLCanvasElement>("#task-status-chart")!;
 
@@ -106,7 +177,10 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
   renderFilterBar(
     root.querySelector<HTMLDivElement>("#filter-mount")!,
     { profiles, statuses: ALL_STATUSES, showSort: true },
-    (state: TaskFilterState) => renderList(applyTaskFilters(tasks, state)),
+    (state: TaskFilterState) => {
+      currentFilterState = state;
+      renderList(applyTaskFilters(tasks, state));
+    },
   );
 }
 

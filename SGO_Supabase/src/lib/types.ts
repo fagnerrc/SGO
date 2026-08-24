@@ -41,6 +41,7 @@ export interface Task {
   created_at: string;
   updated_at: string;
   concluido_em: string | null;
+  excluido: boolean;
 }
 
 export interface ChecklistItem {

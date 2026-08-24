@@ -6,6 +6,7 @@ export async function listCompanyProfiles(): Promise<Profile[]> {
     .from("profiles")
     .select("id, full_name, email, role, area, active, capacidade_semanal")
     .eq("active", true)
+    .eq("excluido", false)
     .order("full_name", { ascending: true });
   if (error) throwSupabaseError(error);
   return data as Profile[];
@@ -14,11 +15,23 @@ export async function listCompanyProfiles(): Promise<Profile[]> {
 // Same query without the active filter — the collaborator management
 // screen needs to show (and let an admin reactivate) inactive people too,
 // unlike every other picker in the app which should only ever offer
-// active collaborators.
+// active collaborators. Still excludes excluido=true (deleted) — those
+// only ever show up in the trash view (listDeletedProfiles).
 export async function adminListProfiles(): Promise<Profile[]> {
   const { data, error } = await getClient()
     .from("profiles")
     .select("id, full_name, email, role, area, active, capacidade_semanal")
+    .eq("excluido", false)
+    .order("full_name", { ascending: true });
+  if (error) throwSupabaseError(error);
+  return data as Profile[];
+}
+
+export async function listDeletedProfiles(): Promise<Profile[]> {
+  const { data, error } = await getClient()
+    .from("profiles")
+    .select("id, full_name, email, role, area, active, capacidade_semanal")
+    .eq("excluido", true)
     .order("full_name", { ascending: true });
   if (error) throwSupabaseError(error);
   return data as Profile[];
@@ -75,6 +88,15 @@ export const setProfileRole = (profileId: string, role: string) =>
 
 export const setProfileCapacity = (profileId: string, capacidadeSemanal: number) =>
   callProfileAction("set_profile_capacity", { p_profile_id: profileId, p_capacidade_semanal: capacidadeSemanal });
+
+// Soft-delete: excluido=true + active=false + sessions revoked
+// (0033_soft_delete.sql) — removes the person from the roster entirely,
+// distinct from just deactivating (which still shows them as "Inativo").
+// Reversible via restoreProfile(), which deliberately does NOT also
+// reactivate — an admin decides that separately after restoring.
+export const deleteProfile = (profileId: string) => callProfileAction("delete_profile", { p_profile_id: profileId });
+
+export const restoreProfile = (profileId: string) => callProfileAction("restore_profile", { p_profile_id: profileId });
 
 function generateTemporaryPin(): string {
   return String(Math.floor(1000 + Math.random() * 9000)); // 4-digit temp PIN, same scheme as admin-create-user

@@ -1,4 +1,14 @@
-import { adminListProfiles, createCollaborator, resetProfilePin, setProfileActive, setProfileCapacity, setProfileRole } from "../lib/profiles";
+import {
+  adminListProfiles,
+  createCollaborator,
+  deleteProfile,
+  listDeletedProfiles,
+  resetProfilePin,
+  restoreProfile,
+  setProfileActive,
+  setProfileCapacity,
+  setProfileRole,
+} from "../lib/profiles";
 import type { Profile } from "../lib/types";
 import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
@@ -33,8 +43,16 @@ async function renderPage(shell: HTMLDivElement): Promise<void> {
   shell.innerHTML = `
     <header class="app-header">
       <h1>Colaboradores</h1>
-      <button id="new-collab-btn" class="btn-primary">+ Novo colaborador</button>
+      <div class="app-header-actions">
+        <button id="trash-toggle-btn" class="link-button">Ver excluídos</button>
+        <button id="new-collab-btn" class="btn-primary">+ Novo colaborador</button>
+      </div>
     </header>
+
+    <div id="trash-panel" class="card" hidden>
+      <h3>Colaboradores excluídos</h3>
+      <div id="trash-list"><p>Carregando...</p></div>
+    </div>
 
     <div id="new-collab-panel" class="card" hidden>
       <h3>Novo colaborador</h3>
@@ -78,6 +96,66 @@ async function renderPage(shell: HTMLDivElement): Promise<void> {
   newBtn.addEventListener("click", () => {
     panel.hidden = !panel.hidden;
   });
+
+  const trashBtn = shell.querySelector<HTMLButtonElement>("#trash-toggle-btn")!;
+  const trashPanel = shell.querySelector<HTMLDivElement>("#trash-panel")!;
+  const trashListEl = shell.querySelector<HTMLDivElement>("#trash-list")!;
+  let trashLoaded = false;
+
+  async function loadTrash(): Promise<void> {
+    trashListEl.innerHTML = "<p>Carregando...</p>";
+    let deleted: Profile[];
+    try {
+      deleted = await listDeletedProfiles();
+    } catch (err) {
+      trashListEl.innerHTML = `<p class="error">${escapeHtml((err as Error).message)}</p>`;
+      return;
+    }
+    trashBtn.textContent = `Ver excluídos (${deleted.length})`;
+    if (deleted.length === 0) {
+      trashListEl.innerHTML = "<p>Nenhum colaborador excluído.</p>";
+      return;
+    }
+    trashListEl.innerHTML = deleted
+      .map(
+        (p) => `
+      <div class="approval-card" data-profile-id="${p.id}">
+        <div>
+          <span class="task-card-title">${escapeHtml(p.full_name)}</span>
+          <span class="approval-waiting-since">${escapeHtml(p.email)}${p.area ? " · " + escapeHtml(p.area) : ""}</span>
+        </div>
+        <div class="approval-actions">
+          <button class="btn-outline restore-profile-btn" data-profile-id="${p.id}">Restaurar</button>
+        </div>
+      </div>`,
+      )
+      .join("");
+    trashListEl.querySelectorAll<HTMLButtonElement>(".restore-profile-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await restoreProfile(btn.dataset.profileId!);
+          toastSuccess("Colaborador restaurado. Ele volta como inativo — reative quando quiser.");
+          await refreshRows(shell);
+          await loadTrash();
+        } catch (err) {
+          toastError((err as Error).message);
+        }
+      });
+    });
+  }
+
+  trashBtn.addEventListener("click", async () => {
+    trashPanel.hidden = !trashPanel.hidden;
+    if (!trashPanel.hidden && !trashLoaded) {
+      trashLoaded = true;
+      await loadTrash();
+    }
+  });
+  void listDeletedProfiles()
+    .then((d) => {
+      if (d.length > 0) trashBtn.textContent = `Ver excluídos (${d.length})`;
+    })
+    .catch(() => {});
 
   const form = shell.querySelector<HTMLFormElement>("#new-collab-form")!;
   const formError = shell.querySelector<HTMLParagraphElement>("#new-collab-error")!;
@@ -136,6 +214,7 @@ async function refreshRows(shell: HTMLDivElement): Promise<void> {
       <td data-label="" class="wrap-cell actions-cell">
         <button class="link-button toggle-active-btn" data-profile-id="${p.id}" data-active="${p.active}">${p.active ? "Desativar" : "Reativar"}</button>
         <button class="link-button reset-pin-btn" data-profile-id="${p.id}" data-name="${escapeAttr(p.full_name)}">Redefinir PIN</button>
+        <button class="link-button dropdown-item-danger delete-profile-btn" data-profile-id="${p.id}" data-name="${escapeAttr(p.full_name)}">Excluir</button>
       </td>
     </tr>`,
     )
@@ -177,6 +256,26 @@ async function refreshRows(shell: HTMLDivElement): Promise<void> {
       try {
         await setProfileActive(btn.dataset.profileId!, !currentlyActive);
         toastSuccess(currentlyActive ? "Colaborador desativado." : "Colaborador reativado.");
+        await refreshRows(shell);
+      } catch (err) {
+        toastError((err as Error).message);
+      }
+    });
+  });
+
+  rowsEl.querySelectorAll<HTMLButtonElement>(".delete-profile-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const name = btn.dataset.name!;
+      const confirmed = await openFormModal({
+        title: "Excluir colaborador",
+        description: `${name} some da lista de colaboradores e é desconectado(a) na hora — mas nada é perdido, dá para restaurar depois em "Ver excluídos".`,
+        fields: [],
+        confirmLabel: "Excluir colaborador",
+      });
+      if (!confirmed) return;
+      try {
+        await deleteProfile(btn.dataset.profileId!);
+        toastSuccess("Colaborador excluído.");
         await refreshRows(shell);
       } catch (err) {
         toastError((err as Error).message);

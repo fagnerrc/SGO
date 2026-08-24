@@ -965,6 +965,21 @@ a {
   gap: 0.4rem;
 }
 
+.trash-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background: var(--red-soft) !important;
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border)) !important;
+}
+.trash-banner p {
+  margin: 0;
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .complete-panel textarea {
   width: 100%;
   padding: 0.55rem 0.7rem;

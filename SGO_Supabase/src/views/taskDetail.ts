@@ -1,8 +1,9 @@
-import { cancelTask, completeTask, getChecklist, getTask, pauseTask, resumeTask, startTask, toggleChecklistItem } from "../lib/tasks";
+import { cancelTask, completeTask, deleteTask, getChecklist, getTask, pauseTask, resumeTask, restoreTask, startTask, toggleChecklistItem } from "../lib/tasks";
 import type { Task } from "../lib/types";
 import { priorityBadge, riskBadge, statusBadge } from "./badges";
 import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
+import { toastSuccess } from "./toast";
 
 function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
@@ -56,6 +57,16 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
         <p>${escapeHtml(task.descricao)}</p>
 
         ${
+          task.excluido
+            ? `
+          <section class="trash-banner">
+            <p>Esta tarefa foi excluída. Ela não aparece nas listas normais, mas nada foi perdido.</p>
+            <button id="restore-task-btn" class="btn-primary">Restaurar tarefa</button>
+          </section>`
+            : ""
+        }
+
+        ${
           isTimed
             ? `
           <section class="timer-panel${timerRunning ? " timer-panel-running" : ""}">
@@ -64,9 +75,9 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
             }</p>
             <p class="timer-total" id="timer-total-live">${formatDuration(liveElapsedMs(task))}</p>
             <div class="timer-actions">
-              ${task.status === "Em andamento" && !timerRunning ? '<button id="start-btn">Iniciar</button>' : ""}
-              ${timerRunning ? '<button id="pause-btn" class="btn-outline">Pausar</button>' : ""}
-              ${task.status === "Em andamento" && task.timer_state === "paused" ? '<button id="resume-btn">Retomar</button>' : ""}
+              ${!task.excluido && task.status === "Em andamento" && !timerRunning ? '<button id="start-btn">Iniciar</button>' : ""}
+              ${!task.excluido && timerRunning ? '<button id="pause-btn" class="btn-outline">Pausar</button>' : ""}
+              ${!task.excluido && task.status === "Em andamento" && task.timer_state === "paused" ? '<button id="resume-btn">Retomar</button>' : ""}
             </div>
           </section>`
             : ""
@@ -80,7 +91,7 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
                 (item) => `
               <li>
                 <label>
-                  <input type="checkbox" data-item-id="${item.id}" ${item.feito ? "checked" : ""} />
+                  <input type="checkbox" data-item-id="${item.id}" ${item.feito ? "checked" : ""} ${task.excluido ? "disabled" : ""} />
                   ${escapeHtml(item.texto)}
                 </label>
               </li>`,
@@ -90,7 +101,7 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
         </section>
 
         ${
-          !["Concluída", "Auditada", "Cancelada"].includes(task.status)
+          !task.excluido && !["Concluída", "Auditada", "Cancelada"].includes(task.status)
             ? `
           <section class="complete-panel">
             <h3>Concluir tarefa</h3>
@@ -102,6 +113,15 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
           </section>
           <section class="cancel-panel">
             <button id="cancel-btn" class="danger-button">Cancelar tarefa</button>
+          </section>`
+            : ""
+        }
+
+        ${
+          !task.excluido
+            ? `
+          <section class="cancel-panel">
+            <button id="delete-task-btn" class="danger-button">Excluir tarefa</button>
           </section>`
             : ""
         }
@@ -155,6 +175,29 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
     });
     if (!values) return;
     cancelTask(taskId, values.motivo).then(reload).catch(showError);
+  });
+  root.querySelector("#delete-task-btn")?.addEventListener("click", async () => {
+    const confirmed = await openFormModal({
+      title: "Excluir tarefa",
+      description: "A tarefa some das listas normais, mas nada é perdido — dá para restaurar depois por aqui mesmo.",
+      fields: [],
+      confirmLabel: "Excluir tarefa",
+    });
+    if (!confirmed) return;
+    deleteTask(taskId)
+      .then(() => {
+        toastSuccess("Tarefa excluída.");
+        reload();
+      })
+      .catch(showError);
+  });
+  root.querySelector("#restore-task-btn")?.addEventListener("click", () => {
+    restoreTask(taskId)
+      .then(() => {
+        toastSuccess("Tarefa restaurada.");
+        reload();
+      })
+      .catch(showError);
   });
 
   root.querySelectorAll<HTMLInputElement>("#checklist-list input[type=checkbox]").forEach((checkbox) => {

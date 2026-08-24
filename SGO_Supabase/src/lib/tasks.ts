@@ -144,6 +144,20 @@ export const approveTask = (taskId: string) => callAction("approve_task", { p_ta
 export const rejectTask = (taskId: string, motivo: string) =>
   callAction("reject_task", { p_task_id: taskId, p_operation_id: newOperationId(), p_motivo: motivo });
 
+// Soft-delete: excluido=true, independent of status (0033_soft_delete.sql)
+// — the task disappears from every list (listMyTasks already filters
+// excluido=false) but the row, and everything that references it, stays
+// intact. Reversible via restoreTask(); nothing is ever hard-deleted.
+export const deleteTask = (taskId: string) => callAction("delete_task", { p_task_id: taskId, p_operation_id: newOperationId() });
+
+export const restoreTask = (taskId: string) => callAction("restore_task", { p_task_id: taskId, p_operation_id: newOperationId() });
+
+export async function listDeletedTasks(): Promise<Task[]> {
+  const { data, error } = await getClient().from("tasks").select("*").eq("excluido", true).order("updated_at", { ascending: false });
+  if (error) throwSupabaseError(error);
+  return data as Task[];
+}
+
 // Same table, same RLS-filtered visibility as listMyTasks() — the approver
 // clause in tasks_select (0006/0007) is what actually decides who sees a
 // given pending-approval task, this is just a narrower status filter on
