@@ -732,6 +732,17 @@ a {
   font-weight: 600;
   font-size: 0.88rem;
 }
+#new-scheduled-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+#new-scheduled-btn svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
 
 .link-button {
   background: none;
