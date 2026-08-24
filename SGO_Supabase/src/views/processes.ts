@@ -38,7 +38,7 @@ function renderPage(shell: HTMLDivElement, processes: Process[], profiles: Profi
   shell.innerHTML = `
     <header class="app-header">
       <h1>Processos</h1>
-      <button id="new-process-btn">+ Novo processo</button>
+      <button id="new-process-btn" class="btn-primary">+ Novo processo</button>
     </header>
     <p class="dashboard-subtitle">Um processo define, de uma vez, o dono, executor, aprovador, SLA, risco, checklist padrão e recorrência de uma família de tarefas — ao criar uma tarefa a partir dele, esses campos são pré-preenchidos.</p>
 

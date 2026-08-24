@@ -30,7 +30,7 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
     <div class="app-shell">
       <header class="app-header">
         <h1>Minhas tarefas</h1>
-        <button id="new-task-btn">+ Nova tarefa</button>
+        <button id="new-task-btn" class="btn-primary">+ Nova tarefa</button>
       </header>
       <div id="filter-mount"></div>
       <p id="filter-summary" class="dashboard-subtitle"></p>

@@ -32,7 +32,7 @@ async function renderPage(shell: HTMLDivElement): Promise<void> {
   shell.innerHTML = `
     <header class="app-header">
       <h1>Colaboradores</h1>
-      <button id="new-collab-btn">+ Novo colaborador</button>
+      <button id="new-collab-btn" class="btn-primary">+ Novo colaborador</button>
     </header>
 
     <div id="new-collab-panel" class="card" hidden>

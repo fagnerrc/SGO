@@ -1095,8 +1095,20 @@ a {
   display: flex;
   gap: 1rem;
   overflow-x: auto;
-  padding-bottom: 1rem;
+  padding-bottom: 0.25rem;
   align-items: start;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.kanban-board::-webkit-scrollbar {
+  height: 6px;
+}
+.kanban-board::-webkit-scrollbar-track {
+  background: transparent;
+}
+.kanban-board::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
 }
 .kanban-column {
   min-width: 260px;
