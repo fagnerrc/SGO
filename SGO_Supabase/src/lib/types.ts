@@ -27,6 +27,7 @@ export interface Task {
   participantes: string[];
   prazo: string | null;
   prazo_manual: boolean;
+  data_inicio: string | null;
   estimativa: number;
   prioridade: string;
   risco: string;
@@ -111,6 +112,7 @@ export interface AuditFinding {
     responsavel_id: string;
     timer_total_ms: number;
     prazo: string | null;
+    data_inicio: string | null;
     concluido_em: string | null;
   } | null;
 }

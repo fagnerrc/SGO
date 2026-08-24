@@ -149,7 +149,7 @@ export async function listPendingAudits(): Promise<Task[]> {
 export async function listAuditFindings(): Promise<AuditFinding[]> {
   const { data, error } = await getClient()
     .from("audit_findings")
-    .select("*, tasks(code, titulo, descricao, tipo, status, responsavel_id, timer_total_ms, prazo, concluido_em)")
+    .select("*, tasks(code, titulo, descricao, tipo, status, responsavel_id, timer_total_ms, prazo, data_inicio, concluido_em)")
     .order("criado_em", { ascending: false });
   if (error) throwSupabaseError(error);
   return data as AuditFinding[];
@@ -217,7 +217,8 @@ export interface NewTaskInput {
   descricao?: string;
   tipo?: string;
   processId?: string;
-  prazo?: string; // ISO datetime, from a <input type="datetime-local">
+  dataInicio?: string; // ISO datetime, from a <input type="datetime-local">-shaped string
+  prazo?: string; // ISO datetime — the deadline/end date, distinct from dataInicio
   estimativa?: number;
   prioridade?: string;
   risco?: string;
@@ -233,6 +234,7 @@ export async function createTask(input: NewTaskInput): Promise<{ id: string }> {
     p_descricao: input.descricao ?? "",
     p_tipo: input.tipo ?? "Demanda operacional",
     p_process_id: input.processId ?? null,
+    p_data_inicio: input.dataInicio ? new Date(input.dataInicio).toISOString() : null,
     p_prazo: input.prazo ? new Date(input.prazo).toISOString() : null,
     p_estimativa: input.estimativa ?? 0,
     p_prioridade: input.prioridade ?? "Normal",

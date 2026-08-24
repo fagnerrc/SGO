@@ -13,6 +13,23 @@ function formatDuration(ms: number): string {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// "No prazo" vs "Atrasada": compares against concluido_em when the task
+// is already done (so completing it late still shows as late forever,
+// not just "on time now that the clock stopped"), otherwise against now.
+function prazoIndicator(task: Task): { label: string; className: string } | null {
+  if (!task.prazo) return null;
+  const deadline = new Date(task.prazo).getTime();
+  const reference = task.concluido_em ? new Date(task.concluido_em).getTime() : Date.now();
+  return reference > deadline
+    ? { label: "Atrasada", className: "prazo-badge prazo-late" }
+    : { label: "No prazo", className: "prazo-badge prazo-ontime" };
+}
+
 // Same live-elapsed math as timerDock.ts's tick() — timer_total_ms only
 // gets the running session folded into it when the timer actually stops
 // (pause/complete), so displaying that field alone while running just
@@ -55,6 +72,21 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
         <h2>${escapeHtml(task.titulo)}</h2>
         <p class="task-detail-status">${statusBadge(task.status)} ${priorityBadge(task.prioridade)} ${riskBadge(task.risco)}</p>
         <p>${escapeHtml(task.descricao)}</p>
+
+        ${
+          task.data_inicio || task.prazo
+            ? `
+        <section class="schedule-panel">
+          <p><strong>Início:</strong> ${formatDateTime(task.data_inicio)}</p>
+          <p><strong>Prazo:</strong> ${formatDateTime(task.prazo)} ${
+                (() => {
+                  const indicator = prazoIndicator(task);
+                  return indicator ? `<span class="${indicator.className}">${indicator.label}</span>` : "";
+                })()
+              }</p>
+        </section>`
+            : ""
+        }
 
         ${
           task.excluido

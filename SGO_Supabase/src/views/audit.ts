@@ -280,6 +280,7 @@ async function showFindingDetail(f: AuditFinding, profileById: Map<string, Profi
         ["Tipo", task.tipo === "Tarefa cronometrada" ? "Cronômetro" : "Agendada"],
         ["Status atual", task.status],
         ["Descrição da tarefa", task.descricao || "—"],
+        ["Início", task.data_inicio ? new Date(task.data_inicio).toLocaleString("pt-BR") : "—"],
         ["Prazo", task.prazo ? new Date(task.prazo).toLocaleString("pt-BR") : "—"],
         ["Concluída em", task.concluido_em ? new Date(task.concluido_em).toLocaleString("pt-BR") : "—"],
       ]

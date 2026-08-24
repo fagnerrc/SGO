@@ -48,14 +48,25 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
 
         <div class="task-form-row">
           <div>
-            <label for="prazo-data">Data</label>
+            <label for="inicio-data">Data de início</label>
+            <input id="inicio-data" name="inicio-data" type="date" />
+          </div>
+          <div>
+            <label for="inicio-hora">Horário de início</label>
+            <input id="inicio-hora" name="inicio-hora" type="time" />
+          </div>
+        </div>
+        <div class="task-form-row">
+          <div>
+            <label for="prazo-data">Data de término (prazo)</label>
             <input id="prazo-data" name="prazo-data" type="date" />
           </div>
           <div>
-            <label for="prazo-hora">Horário</label>
+            <label for="prazo-hora">Horário de término</label>
             <input id="prazo-hora" name="prazo-hora" type="time" />
           </div>
         </div>
+        <p id="date-range-error" class="error" hidden></p>
 
         <label for="estimativa">Estimativa (horas)</label>
         <input id="estimativa" name="estimativa" type="number" min="0" step="0.5" value="0" />
@@ -186,9 +197,21 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
       return;
     }
 
+    const inicioData = (form.elements.namedItem("inicio-data") as HTMLInputElement).value;
+    const inicioHora = (form.elements.namedItem("inicio-hora") as HTMLInputElement).value;
+    const dataInicio = inicioData ? `${inicioData}T${inicioHora || "00:00"}` : undefined;
+
     const prazoData = (form.elements.namedItem("prazo-data") as HTMLInputElement).value;
     const prazoHora = (form.elements.namedItem("prazo-hora") as HTMLInputElement).value;
     const prazo = prazoData ? `${prazoData}T${prazoHora || "00:00"}` : undefined;
+
+    const dateRangeErrorEl = root.querySelector<HTMLParagraphElement>("#date-range-error")!;
+    dateRangeErrorEl.hidden = true;
+    if (dataInicio && prazo && new Date(dataInicio) > new Date(prazo)) {
+      dateRangeErrorEl.textContent = "A data de início não pode ser depois do prazo final.";
+      dateRangeErrorEl.hidden = false;
+      return;
+    }
 
     const submitButton = root.querySelector<HTMLButtonElement>("#submit-btn")!;
     submitButton.disabled = true;
@@ -200,6 +223,7 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
         tipo: "Tarefa agendada",
         processId: (form.elements.namedItem("processo") as HTMLSelectElement).value || undefined,
         responsavelId,
+        dataInicio,
         prazo,
         estimativa: Number((form.elements.namedItem("estimativa") as HTMLInputElement).value || 0),
         prioridade: (form.elements.namedItem("prioridade") as HTMLSelectElement).value,

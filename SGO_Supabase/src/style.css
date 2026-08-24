@@ -933,6 +933,20 @@ a {
   gap: 0.5rem;
 }
 
+.schedule-panel p {
+  margin: 0.2rem 0;
+}
+.prazo-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.prazo-ontime { color: var(--green); background: var(--green-soft); }
+.prazo-late { color: var(--red); background: var(--red-soft); }
+
 .timer-panel {
   text-align: center;
   transition: background 0.2s ease, border-color 0.2s ease;
