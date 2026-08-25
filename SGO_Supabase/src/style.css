@@ -982,6 +982,15 @@ a {
   align-items: center;
   gap: 0.5rem;
 }
+.task-detail-desc {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.task-detail-desc .link-button {
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
 
 .schedule-panel p {
   margin: 0.2rem 0;

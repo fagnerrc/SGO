@@ -201,6 +201,20 @@ export async function listPendingApprovals(): Promise<Task[]> {
   return data as Task[];
 }
 
+// Descrição is otherwise write-once (only create_task() ever sets it) —
+// this lets whoever can already act on the task (can_mutate_task, via
+// lock_task inside the RPC: responsável/solicitante/participante/gestor da
+// área/privilegiado) fix it up mid-task, not just someone with direct
+// database access. Not a status transition, so it works at any status.
+export const updateTaskDescription = (taskId: string, descricao: string) =>
+  callAction("update_task_description", { p_task_id: taskId, p_operation_id: newOperationId(), p_descricao: descricao });
+
+// Same authorization as updateTaskDescription — lets a Tarefa cronometrada
+// (created with no checklist at all, see 0034) build one up live, not just
+// Tarefa Agendada's checklist-at-creation flow.
+export const addChecklistItem = (taskId: string, texto: string) =>
+  callAction("add_task_checklist_item", { p_task_id: taskId, p_operation_id: newOperationId(), p_texto: texto });
+
 export async function toggleChecklistItem(itemId: string, done: boolean): Promise<void> {
   // Direct table update, not an RPC — task_checklist_items_update (0011)
   // is a simple RLS policy scoped, at the grant level, to just this one

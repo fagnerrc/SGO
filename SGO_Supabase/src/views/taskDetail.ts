@@ -1,4 +1,17 @@
-import { cancelTask, completeTask, deleteTask, getChecklist, getTask, pauseTask, resumeTask, restoreTask, startTask, toggleChecklistItem } from "../lib/tasks";
+import {
+  addChecklistItem,
+  cancelTask,
+  completeTask,
+  deleteTask,
+  getChecklist,
+  getTask,
+  pauseTask,
+  resumeTask,
+  restoreTask,
+  startTask,
+  toggleChecklistItem,
+  updateTaskDescription,
+} from "../lib/tasks";
 import type { Task } from "../lib/types";
 import { priorityBadge, riskBadge, routineBadge, statusBadge } from "./badges";
 import { openFormModal } from "./modal";
@@ -71,7 +84,10 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
       <div class="task-detail">
         <h2>${escapeHtml(task.titulo)}</h2>
         <p class="task-detail-status">${statusBadge(task.status)} ${priorityBadge(task.prioridade)} ${riskBadge(task.risco)} ${routineBadge(task.tipo)}</p>
-        <p>${escapeHtml(task.descricao)}</p>
+        <p class="task-detail-desc">
+          ${escapeHtml(task.descricao)}
+          ${!task.excluido ? '<button id="edit-desc-btn" class="link-button">editar</button>' : ""}
+        </p>
 
         ${
           task.data_inicio || task.prazo
@@ -115,9 +131,6 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
             : ""
         }
 
-        ${
-          !isTimed
-            ? `
         <section class="checklist-panel">
           <h3>Checklist</h3>
           <ul id="checklist-list">
@@ -133,9 +146,16 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
               )
               .join("")}
           </ul>
-        </section>`
-            : ""
-        }
+          ${
+            !task.excluido
+              ? `
+          <div class="checklist-add-row">
+            <input id="checklist-item-input" type="text" placeholder="Adicionar item e pressionar Enter" />
+            <button type="button" id="checklist-item-add-btn">Adicionar</button>
+          </div>`
+              : ""
+          }
+        </section>
 
         ${
           !task.excluido && !["Concluída", "Auditada", "Cancelada"].includes(task.status)
@@ -228,6 +248,30 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
       })
       .catch(showError);
   });
+  root.querySelector("#edit-desc-btn")?.addEventListener("click", async () => {
+    const values = await openFormModal({
+      title: "Editar descrição",
+      fields: [{ name: "descricao", label: "Descrição", type: "textarea", required: true, defaultValue: task.descricao }],
+      confirmLabel: "Salvar",
+    });
+    if (!values) return;
+    updateTaskDescription(taskId, values.descricao).then(reload).catch(showError);
+  });
+
+  const addItem = () => {
+    const input = root.querySelector<HTMLInputElement>("#checklist-item-input")!;
+    const texto = input.value.trim();
+    if (!texto) return;
+    addChecklistItem(taskId, texto).then(reload).catch(showError);
+  };
+  root.querySelector("#checklist-item-add-btn")?.addEventListener("click", addItem);
+  root.querySelector<HTMLInputElement>("#checklist-item-input")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addItem();
+    }
+  });
+
   root.querySelector("#restore-task-btn")?.addEventListener("click", () => {
     restoreTask(taskId)
       .then(() => {
