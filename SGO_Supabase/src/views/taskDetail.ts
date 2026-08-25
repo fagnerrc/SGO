@@ -90,16 +90,21 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
         </p>
 
         ${
-          task.data_inicio || task.prazo
+          task.data_inicio || task.prazo || (!isTimed && task.timer_total_ms > 0)
             ? `
         <section class="schedule-panel">
-          <p><strong>Início:</strong> ${formatDateTime(task.data_inicio)}</p>
-          <p><strong>Prazo:</strong> ${formatDateTime(task.prazo)} ${
-                (() => {
-                  const indicator = prazoIndicator(task);
-                  return indicator ? `<span class="${indicator.className}">${indicator.label}</span>` : "";
-                })()
-              }</p>
+          ${task.data_inicio ? `<p><strong>Início:</strong> ${formatDateTime(task.data_inicio)}</p>` : ""}
+          ${
+            task.prazo
+              ? `<p><strong>Prazo:</strong> ${formatDateTime(task.prazo)} ${
+                  (() => {
+                    const indicator = prazoIndicator(task);
+                    return indicator ? `<span class="${indicator.className}">${indicator.label}</span>` : "";
+                  })()
+                }</p>`
+              : ""
+          }
+          ${!isTimed ? `<p><strong>Tempo gasto:</strong> ${formatDuration(task.timer_total_ms)}</p>` : ""}
         </section>`
             : ""
         }
@@ -170,6 +175,18 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
           </section>
           <section class="cancel-panel">
             <button id="cancel-btn" class="danger-button">Cancelar tarefa</button>
+          </section>`
+            : ""
+        }
+
+        ${
+          ["Concluída", "Auditada", "Cancelada"].includes(task.status)
+            ? `
+          <section class="complete-panel">
+            <h3>Execução</h3>
+            <label>Evidência de execução</label>
+            <p>${escapeHtml(task.evidencia || "Nenhuma evidência registrada.")}</p>
+            ${task.justificativa_atraso ? `<label>Justificativa de atraso</label><p>${escapeHtml(task.justificativa_atraso)}</p>` : ""}
           </section>`
             : ""
         }

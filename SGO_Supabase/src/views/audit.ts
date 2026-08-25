@@ -14,11 +14,16 @@ import { renderNav } from "./nav";
 import { toastError, toastSuccess } from "./toast";
 
 function formatSpentTime(ms: number): string {
-  const totalMinutes = Math.round(ms / 60000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0 && minutes === 0) return "—";
-  return `${hours}h${String(minutes).padStart(2, "0")}`;
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatChecklistForDisplay(items: ChecklistItem[]): string {
+  if (items.length === 0) return "Sem checklist.";
+  return items.map((item) => `${item.feito ? "☑" : "☐"} ${item.texto}`).join("\n");
 }
 
 type AuditTab = "fila" | "achados";
@@ -136,13 +141,20 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
 
   async function openAuditForm(taskId: string): Promise<void> {
     const task = pending.find((t) => t.id === taskId);
+    const checklist = await getChecklist(taskId).catch(() => []);
+    const responsavel = task ? profileById.get(task.responsavel_id) : null;
     const values = await openFormModal({
       title: "Registrar auditoria",
       description: "Fato e ação corretiva são obrigatórios em ambos os resultados — servem de registro mesmo quando a tarefa é aprovada.",
       fields: [
         { name: "titulo", label: "Título", type: "readonly", defaultValue: task ? `${task.code ?? ""} ${task.titulo}`.trim() : "—" },
         { name: "descricao", label: "Descrição", type: "readonly", defaultValue: task?.descricao || "—" },
+        { name: "responsavel", label: "Responsável", type: "readonly", defaultValue: responsavel?.full_name ?? "—" },
+        { name: "tipo", label: "Tipo", type: "readonly", defaultValue: task?.tipo ?? "—" },
+        { name: "prazo_original", label: "Prazo", type: "readonly", defaultValue: task?.prazo ? new Date(task.prazo).toLocaleString("pt-BR") : "—" },
         { name: "tempo_gasto", label: "Tempo gasto", type: "readonly", defaultValue: task ? formatSpentTime(task.timer_total_ms) : "—" },
+        { name: "checklist_display", label: "Checklist", type: "readonly", defaultValue: formatChecklistForDisplay(checklist) },
+        { name: "evidencia_execucao", label: "Evidência de execução", type: "readonly", defaultValue: task?.evidencia || "Nenhuma evidência registrada." },
         {
           name: "resultado",
           label: "Resultado",
@@ -269,23 +281,20 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
 
 async function showFindingDetail(f: AuditFinding, profileById: Map<string, Profile>): Promise<void> {
   const task = f.tasks;
-  const isAgendada = task?.tipo === "Tarefa agendada";
-  let checklist: ChecklistItem[] = [];
-  if (isAgendada) {
-    checklist = await getChecklist(f.task_id).catch(() => []);
-  }
+  const checklist = await getChecklist(f.task_id).catch(() => []);
 
   const responsavel = task ? profileById.get(task.responsavel_id) : null;
   const execRows: [string, string][] = task
     ? [
         ["Executado por", responsavel?.full_name ?? "—"],
         ["Tempo gasto", formatSpentTime(task.timer_total_ms)],
-        ["Tipo", task.tipo === "Tarefa cronometrada" ? "Cronômetro" : "Agendada"],
+        ["Tipo", task.tipo],
         ["Status atual", task.status],
         ["Descrição da tarefa", task.descricao || "—"],
         ["Início", task.data_inicio ? new Date(task.data_inicio).toLocaleString("pt-BR") : "—"],
         ["Prazo", task.prazo ? new Date(task.prazo).toLocaleString("pt-BR") : "—"],
         ["Concluída em", task.concluido_em ? new Date(task.concluido_em).toLocaleString("pt-BR") : "—"],
+        ["Evidência de execução", task.evidencia || "Nenhuma evidência registrada."],
       ]
     : [];
 
@@ -306,17 +315,13 @@ async function showFindingDetail(f: AuditFinding, profileById: Map<string, Profi
       <div class="modal-body task-form">
         <h4>Execução da tarefa</h4>
         ${execRows.map(([label, text]) => `<label>${escapeHtml(label)}</label><p>${escapeHtml(text)}</p>`).join("")}
+        <label>Checklist</label>
         ${
-          isAgendada
-            ? `<label>Checklist</label>
-               ${
-                 checklist.length > 0
-                   ? `<ul class="finding-detail-checklist">${checklist
-                       .map((item) => `<li>${item.feito ? "☑" : "☐"} ${escapeHtml(item.texto)}</li>`)
-                       .join("")}</ul>`
-                   : "<p>Sem itens de checklist.</p>"
-               }`
-            : ""
+          checklist.length > 0
+            ? `<ul class="finding-detail-checklist">${checklist
+                .map((item) => `<li>${item.feito ? "☑" : "☐"} ${escapeHtml(item.texto)}</li>`)
+                .join("")}</ul>`
+            : "<p>Sem itens de checklist.</p>"
         }
         <h4>Registro da auditoria</h4>
         ${auditRows.map(([label, text]) => `<label>${escapeHtml(label)}</label><p>${escapeHtml(text)}</p>`).join("")}

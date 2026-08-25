@@ -116,6 +116,7 @@ export interface AuditFinding {
     prazo: string | null;
     data_inicio: string | null;
     concluido_em: string | null;
+    evidencia: string;
   } | null;
 }
 

@@ -149,7 +149,7 @@ export async function listPendingAudits(): Promise<Task[]> {
 export async function listAuditFindings(): Promise<AuditFinding[]> {
   const { data, error } = await getClient()
     .from("audit_findings")
-    .select("*, tasks(code, titulo, descricao, tipo, status, responsavel_id, timer_total_ms, prazo, data_inicio, concluido_em)")
+    .select("*, tasks(code, titulo, descricao, tipo, status, responsavel_id, timer_total_ms, prazo, data_inicio, concluido_em, evidencia)")
     .order("criado_em", { ascending: false });
   if (error) throwSupabaseError(error);
   return data as AuditFinding[];
