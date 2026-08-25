@@ -6,9 +6,16 @@
 // list once per render and a lightweight local timer keeps the "há
 // Xh Ymin" text current.
 
-import { listCompanyProfiles } from "../lib/profiles";
-import { computePresenceStatus, INACTIVE_THRESHOLD_MS, lastActivityClockLabel, presenceStatusLabel, sortByPresence, type PresenceStatus } from "../lib/presence";
-import type { Profile } from "../lib/types";
+import {
+  computePresenceStatus,
+  INACTIVE_THRESHOLD_MS,
+  lastActivityClockLabel,
+  listTeamPresence,
+  presenceStatusLabel,
+  sortByPresence,
+  type PresenceStatus,
+  type TeamPresenceRow,
+} from "../lib/presence";
 import { initials, roleLabel } from "./badges";
 import { renderNav } from "./nav";
 
@@ -32,11 +39,14 @@ export async function renderPresence(root: HTMLElement): Promise<void> {
   await renderNav(root.querySelector("#nav-mount")!, "presence");
 
   const shell = root.querySelector<HTMLDivElement>(".app-shell")!;
-  let profiles: Profile[];
+  let profiles: TeamPresenceRow[];
   try {
-    profiles = await listCompanyProfiles();
+    profiles = await listTeamPresence();
   } catch (err) {
-    shell.innerHTML = `<p class="error">Não foi possível carregar a equipe: ${(err as Error).message}</p>`;
+    const message = err instanceof Error ? err.message : String(err);
+    shell.innerHTML = message.includes("SGO_FORBIDDEN")
+      ? `<p class="error">Acesso restrito a administradores, diretoria e processos/auditoria.</p>`
+      : `<p class="error">Não foi possível carregar a equipe: ${message}</p>`;
     return;
   }
 
@@ -118,7 +128,7 @@ export async function renderPresence(root: HTMLElement): Promise<void> {
   tickInterval = setInterval(render, 30_000);
 }
 
-function presenceCardHtml(p: Profile): string {
+function presenceCardHtml(p: TeamPresenceRow): string {
   const status = computePresenceStatus(p.last_activity_at);
   const isCritical = status === "inativo" && p.last_activity_at !== null && Date.now() - new Date(p.last_activity_at).getTime() > INACTIVE_THRESHOLD_MS;
   const subtitle = p.area || roleLabel(p.role);

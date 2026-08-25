@@ -6,18 +6,27 @@
 // Date.now() — never pushed from the server and never re-fetched just to
 // tick a counter (section 11 of the spec).
 
-import { listCompanyProfiles } from "./profiles";
 import { reportClientError } from "./diagnostics";
-import { getClient } from "./supabase";
-import type { Profile } from "./types";
+import { getClient, throwSupabaseError } from "./supabase";
 
 export type PresenceStatus = "ativo" | "ausente" | "inativo";
 
-// ATIVO's window matches the heartbeat interval below — as long as a tab
-// stays open and interacted-with, heartbeats keep landing every ~5min and
-// the person never drifts out of "ativo agora" between them. INATIVO's
-// 2h threshold is the spec's one hard, exact rule (section 4).
-const ACTIVE_WINDOW_MS = 5 * 60 * 1000;
+// Narrower than Profile on purpose — list_team_presence() (0043) is a
+// role-gated RPC (admin/diretoria/auditoria only, see below), separate
+// from listCompanyProfiles()'s open-to-everyone picker data, and only
+// ever returns exactly the columns the presence UI needs.
+export interface TeamPresenceRow {
+  id: string;
+  full_name: string;
+  area: string;
+  role: string;
+  last_activity_at: string | null;
+}
+
+// ATIVO's window — a person stays "ativo agora" for this long after their
+// last recorded activity before dropping to AUSENTE. INATIVO's 2h
+// threshold is the spec's one hard, exact rule (section 4).
+const ACTIVE_WINDOW_MS = 40 * 60 * 1000;
 export const INACTIVE_THRESHOLD_MS = 2 * 60 * 60 * 1000;
 
 export function computePresenceStatus(lastActivityAt: string | null): PresenceStatus {
@@ -55,7 +64,7 @@ export function lastActivityClockLabel(lastActivityAt: string | null): string {
 // lead the list instead of being buried under everyone who's fine.
 const STATUS_ORDER: Record<PresenceStatus, number> = { inativo: 0, ausente: 1, ativo: 2 };
 
-export function sortByPresence(profiles: Profile[]): Profile[] {
+export function sortByPresence(profiles: TeamPresenceRow[]): TeamPresenceRow[] {
   return [...profiles].sort((a, b) => {
     const orderDiff = STATUS_ORDER[computePresenceStatus(a.last_activity_at)] - STATUS_ORDER[computePresenceStatus(b.last_activity_at)];
     if (orderDiff !== 0) return orderDiff;
@@ -70,18 +79,31 @@ export async function recordActivity(): Promise<void> {
   if (error) throw error;
 }
 
+// Restricted to admin/diretoria/auditoria server-side (0043) — everyone
+// still records their own activity via recordActivity() above, but only
+// those roles may read the team's. A non-privileged caller gets a plain
+// SGO_FORBIDDEN error, same shape as every other role-gated RPC in this
+// app (create_routine, etc.) — callers should expect this to reject for
+// most people and handle it (see presence.ts / nav.ts, which only ever
+// call this behind an isPrivileged check to begin with).
+export async function listTeamPresence(): Promise<TeamPresenceRow[]> {
+  const { data, error } = await getClient().rpc("list_team_presence");
+  if (error) throwSupabaseError(error);
+  return (data ?? []) as TeamPresenceRow[];
+}
+
 // Short-lived cache shared by the sidebar widget across navigations —
 // renderNav() runs on every single route change, and re-fetching the
 // whole team's presence on every one of those would be wasteful (and is
 // exactly the kind of "in the critical path" cost section 18 warns
 // against). 60s is short enough that the sidebar still feels live.
-let cachedTeam: Profile[] | null = null;
+let cachedTeam: TeamPresenceRow[] | null = null;
 let cachedTeamAt = 0;
 const TEAM_CACHE_MS = 60_000;
 
-export async function getCachedTeamPresence(forceRefresh = false): Promise<Profile[]> {
+export async function getCachedTeamPresence(forceRefresh = false): Promise<TeamPresenceRow[]> {
   if (!forceRefresh && cachedTeam && Date.now() - cachedTeamAt < TEAM_CACHE_MS) return cachedTeam;
-  cachedTeam = await listCompanyProfiles();
+  cachedTeam = await listTeamPresence();
   cachedTeamAt = Date.now();
   return cachedTeam;
 }

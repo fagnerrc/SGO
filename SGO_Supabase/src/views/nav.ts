@@ -2,7 +2,7 @@ import { applyBranding, getBranding, type Branding } from "../lib/branding";
 import { logout } from "../lib/auth";
 import { listMyNotifications, markNotificationRead, type AppNotification } from "../lib/notifications";
 import { getMyProfile } from "../lib/profiles";
-import { computePresenceStatus, getCachedTeamPresence, initPresenceHeartbeat } from "../lib/presence";
+import { computePresenceStatus, getCachedTeamPresence, initPresenceHeartbeat, type TeamPresenceRow } from "../lib/presence";
 import { clearSession } from "../lib/session";
 import { createTask, listMyTasks, startTask } from "../lib/tasks";
 import type { Profile, Task } from "../lib/types";
@@ -165,11 +165,11 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
     { key: "tasks", label: "Tarefas", href: "#/tasks" },
     { key: "kanban", label: "Kanban", href: "#/kanban" },
     { key: "approvals", label: "Aprovações", href: "#/approvals" },
-    { key: "presence", label: "Presença", href: "#/presence" },
   ];
   if (canSeeReports) links.push({ key: "reports", label: "Relatórios", href: "#/reports" });
   if (isPrivileged) {
     links.push({ key: "audit", label: "Auditoria", href: "#/audit" });
+    links.push({ key: "presence", label: "Presença", href: "#/presence" });
     links.push({ key: "collaborators", label: "Colaboradores", href: "#/admin/collaborators" });
     links.push({ key: "processes", label: "Processos", href: "#/admin/processes" });
     links.push({ key: "diagnostics", label: "Diagnóstico", href: "#/diagnostics" });
@@ -281,8 +281,11 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
   void loadNotifications(root); // populate the badge right away, not only once the bell is clicked
 
   if (profile) {
+    // Everyone still *records* their own activity (recordActivity() has
+    // no role check — it has to work for every person for the feature to
+    // mean anything) — only *viewing* the team's presence is restricted.
     initPresenceHeartbeat();
-    void loadPresenceSidebar(root);
+    if (isPrivileged) void loadPresenceSidebar(root);
   }
 
   root.querySelector("#quick-start-btn")!.addEventListener("click", () => void quickStartTimer(profile));
@@ -409,7 +412,7 @@ const SIDEBAR_PRESENCE_LIMIT = 5;
 // re-fetches from the server. Torn down at the top of the next
 // renderNav() call, same as greetingInterval.
 async function loadPresenceSidebar(root: HTMLElement): Promise<void> {
-  const render = (profiles: Profile[]) => renderPresenceWidget(root, profiles);
+  const render = (profiles: TeamPresenceRow[]) => renderPresenceWidget(root, profiles);
 
   try {
     render(await getCachedTeamPresence());
@@ -435,7 +438,7 @@ async function loadPresenceSidebar(root: HTMLElement): Promise<void> {
   }, 120_000);
 }
 
-function renderPresenceWidget(root: HTMLElement, profiles: Profile[]): void {
+function renderPresenceWidget(root: HTMLElement, profiles: TeamPresenceRow[]): void {
   const widget = root.querySelector<HTMLElement>("#sidebar-presence");
   const listEl = root.querySelector<HTMLUListElement>("#sidebar-presence-list");
   const countEl = root.querySelector<HTMLElement>("#sidebar-presence-count");
