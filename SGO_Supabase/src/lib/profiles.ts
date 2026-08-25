@@ -4,7 +4,7 @@ import type { Profile } from "./types";
 export async function listCompanyProfiles(): Promise<Profile[]> {
   const { data, error } = await getClient()
     .from("profiles")
-    .select("id, full_name, email, role, area, active, capacidade_semanal")
+    .select("id, full_name, email, role, area, active, capacidade_semanal, last_activity_at")
     .eq("active", true)
     .eq("excluido", false)
     .order("full_name", { ascending: true });
@@ -20,7 +20,7 @@ export async function listCompanyProfiles(): Promise<Profile[]> {
 export async function adminListProfiles(): Promise<Profile[]> {
   const { data, error } = await getClient()
     .from("profiles")
-    .select("id, full_name, email, role, area, active, capacidade_semanal")
+    .select("id, full_name, email, role, area, active, capacidade_semanal, last_activity_at")
     .eq("excluido", false)
     .order("full_name", { ascending: true });
   if (error) throwSupabaseError(error);
@@ -30,7 +30,7 @@ export async function adminListProfiles(): Promise<Profile[]> {
 export async function listDeletedProfiles(): Promise<Profile[]> {
   const { data, error } = await getClient()
     .from("profiles")
-    .select("id, full_name, email, role, area, active, capacidade_semanal")
+    .select("id, full_name, email, role, area, active, capacidade_semanal, last_activity_at")
     .eq("excluido", true)
     .order("full_name", { ascending: true });
   if (error) throwSupabaseError(error);

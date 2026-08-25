@@ -10,17 +10,10 @@ import {
   setProfileRole,
 } from "../lib/profiles";
 import type { Profile } from "../lib/types";
+import { ROLE_LABELS } from "./badges";
 import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
 import { toastError, toastSuccess } from "./toast";
-
-const ROLE_LABELS: Record<string, string> = {
-  colaborador: "Colaborador",
-  gestor: "Gestor de área",
-  diretoria: "Diretoria",
-  auditoria: "Processos e auditoria",
-  admin: "Administrador",
-};
 
 export async function renderCollaborators(root: HTMLElement): Promise<void> {
   root.innerHTML = `<div id="nav-mount"></div><div class="app-shell"><p>Carregando...</p></div>`;

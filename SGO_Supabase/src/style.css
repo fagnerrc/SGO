@@ -303,6 +303,98 @@ a {
   height: 16px;
   stroke-width: 2;
 }
+.badge-dot-red {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+/* Sidebar — Equipe ativa (section 6/7/20) */
+
+.sidebar-presence {
+  margin-top: 10px;
+  padding: 12px 10px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-presence-header {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+  padding: 0 4px 6px;
+}
+.sidebar-presence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar-presence-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.presence-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.presence-dot-ativo { background: var(--green); }
+.presence-dot-ausente { background: var(--yellow); }
+.presence-dot-inativo { background: var(--red); }
+.sidebar-presence-more {
+  width: 100%;
+  text-align: left;
+  padding: 5px 4px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--primary-dark);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.sidebar-presence-more:hover {
+  background: var(--surface-strong);
+}
+.sidebar-presence-alert {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  background: var(--red-soft);
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-presence-alert:hover {
+  background: color-mix(in srgb, var(--danger) 12%, var(--red-soft));
+}
 
 /* Topbar */
 
@@ -1282,6 +1374,91 @@ a {
 .tab.active .tab-count {
   background: rgba(255, 255, 255, 0.25);
   color: #fff;
+}
+
+/* Presença / Atividade da Equipe */
+
+.presence-search {
+  width: 100%;
+  max-width: 360px;
+  margin-bottom: 1.1rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.85rem;
+}
+.presence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.presence-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.85rem 1.1rem;
+  box-shadow: var(--shadow-sm);
+}
+.presence-card-alert {
+  background: var(--red-soft);
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+  border-left: 4px solid var(--danger);
+  padding-left: calc(1.1rem - 4px);
+}
+.presence-card-alert-icon {
+  font-size: 1.1rem;
+  flex: 0 0 auto;
+}
+.presence-avatar {
+  flex: 0 0 auto;
+}
+.presence-card-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.presence-card-name {
+  font-weight: 700;
+  color: var(--heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.presence-card-role {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.presence-card-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+  text-align: right;
+}
+.presence-status-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.presence-status-ativo { color: var(--green); }
+.presence-status-ausente { color: var(--yellow); }
+.presence-status-inativo { color: var(--red); }
+.presence-card-clock {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .presence-card-role {
+    display: none;
+  }
 }
 
 /* ---------------------------------------------------------------- */

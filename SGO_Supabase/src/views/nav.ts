@@ -2,6 +2,7 @@ import { applyBranding, getBranding, type Branding } from "../lib/branding";
 import { logout } from "../lib/auth";
 import { listMyNotifications, markNotificationRead, type AppNotification } from "../lib/notifications";
 import { getMyProfile } from "../lib/profiles";
+import { computePresenceStatus, getCachedTeamPresence, initPresenceHeartbeat } from "../lib/presence";
 import { clearSession } from "../lib/session";
 import { createTask, listMyTasks, startTask } from "../lib/tasks";
 import type { Profile, Task } from "../lib/types";
@@ -22,6 +23,7 @@ export type PageKey =
   | "collaborators"
   | "processes"
   | "routines"
+  | "presence"
   | "settings";
 
 const PRIVILEGED_ROLES = new Set(["admin", "diretoria", "auditoria"]);
@@ -47,6 +49,13 @@ let searchTasksPromise: Promise<Task[]> | null = null;
 // old interval has to be torn down each time or it just keeps writing
 // into detached nodes forever.
 let greetingInterval: ReturnType<typeof setInterval> | null = null;
+
+// Same reasoning as greetingInterval, split in two: presenceTickInterval
+// only re-renders the already-fetched list's "há Xmin" text locally (no
+// network), presencePollInterval is the much rarer one that actually
+// re-fetches from the server — see loadPresenceSidebar() below.
+let presenceTickInterval: ReturnType<typeof setInterval> | null = null;
+let presencePollInterval: ReturnType<typeof setInterval> | null = null;
 
 // Registered once, not per-render: this listens on `document`, which
 // outlives every nav-mount replacement, so re-adding it on each
@@ -91,6 +100,8 @@ const ICONS: Record<PageKey, string> = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M10 6.5h4M6.5 10v4M17.5 10v4M10 17.5h4"/></svg>',
   routines:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.2v-2a4 4 0 0 1 4-4h14"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.8v2a4 4 0 0 1-4 4H3"/></svg>',
+  presence:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><circle cx="19" cy="8" r="3.2" fill="currentColor" stroke="none"/></svg>',
   settings:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
 };
@@ -107,6 +118,14 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
   if (greetingInterval) {
     clearInterval(greetingInterval);
     greetingInterval = null;
+  }
+  if (presenceTickInterval) {
+    clearInterval(presenceTickInterval);
+    presenceTickInterval = null;
+  }
+  if (presencePollInterval) {
+    clearInterval(presencePollInterval);
+    presencePollInterval = null;
   }
 
   const branding = await getBranding().catch(() => null);
@@ -146,6 +165,7 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
     { key: "tasks", label: "Tarefas", href: "#/tasks" },
     { key: "kanban", label: "Kanban", href: "#/kanban" },
     { key: "approvals", label: "Aprovações", href: "#/approvals" },
+    { key: "presence", label: "Presença", href: "#/presence" },
   ];
   if (canSeeReports) links.push({ key: "reports", label: "Relatórios", href: "#/reports" });
   if (isPrivileged) {
@@ -181,10 +201,16 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
           <a href="${l.href}" class="sidebar-link${l.key === active ? " active" : ""}">
             <span class="sidebar-link-icon">${ICONS[l.key]}</span>
             <span>${l.label}</span>
+            ${l.key === "presence" ? '<span id="presence-nav-badge" class="badge-dot-red" hidden></span>' : ""}
           </a>`,
           )
           .join("")}
       </nav>
+      <div class="sidebar-presence" id="sidebar-presence" hidden>
+        <p class="sidebar-presence-header">EQUIPE ATIVA · <span id="sidebar-presence-count">0</span></p>
+        <ul class="sidebar-presence-list" id="sidebar-presence-list"></ul>
+        <button type="button" class="sidebar-presence-alert" id="sidebar-presence-alert" hidden></button>
+      </div>
     </aside>
     <header class="topbar">
       <div class="topbar-greeting">
@@ -253,6 +279,11 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
   setupDropdown(root, "#user-btn", "#user-panel");
   setupSearch(root);
   void loadNotifications(root); // populate the badge right away, not only once the bell is clicked
+
+  if (profile) {
+    initPresenceHeartbeat();
+    void loadPresenceSidebar(root);
+  }
 
   root.querySelector("#quick-start-btn")!.addEventListener("click", () => void quickStartTimer(profile));
   root.querySelector("#new-scheduled-btn")!.addEventListener("click", () => {
@@ -367,6 +398,76 @@ async function loadNotifications(root: HTMLElement): Promise<void> {
       if (taskId) location.hash = `#/tasks/${taskId}`;
     });
   });
+}
+
+const SIDEBAR_PRESENCE_LIMIT = 5;
+
+// Fetches once (via the shared 60s cache) and paints the sidebar widget,
+// then keeps it accurate two different ways: a cheap local tick that just
+// re-renders the same already-fetched list (elapsed-time text only
+// changes, no new data needed) and a much rarer poll that actually
+// re-fetches from the server. Torn down at the top of the next
+// renderNav() call, same as greetingInterval.
+async function loadPresenceSidebar(root: HTMLElement): Promise<void> {
+  const render = (profiles: Profile[]) => renderPresenceWidget(root, profiles);
+
+  try {
+    render(await getCachedTeamPresence());
+  } catch (err) {
+    console.error("[SGO] failed to load team presence:", err);
+    return; // presence is non-critical — leave the widget hidden rather than show broken data
+  }
+
+  presenceTickInterval = setInterval(async () => {
+    try {
+      render(await getCachedTeamPresence());
+    } catch {
+      // transient — the next tick tries again, nothing user-visible to do here
+    }
+  }, 30_000);
+
+  presencePollInterval = setInterval(async () => {
+    try {
+      render(await getCachedTeamPresence(true));
+    } catch {
+      // same as above — the widget just keeps showing the last good data
+    }
+  }, 120_000);
+}
+
+function renderPresenceWidget(root: HTMLElement, profiles: Profile[]): void {
+  const widget = root.querySelector<HTMLElement>("#sidebar-presence");
+  const listEl = root.querySelector<HTMLUListElement>("#sidebar-presence-list");
+  const countEl = root.querySelector<HTMLElement>("#sidebar-presence-count");
+  const alertBtn = root.querySelector<HTMLButtonElement>("#sidebar-presence-alert");
+  const navBadge = root.querySelector<HTMLElement>("#presence-nav-badge");
+  if (!widget || !listEl || !countEl || !alertBtn || !navBadge) return;
+
+  const active = profiles.filter((p) => computePresenceStatus(p.last_activity_at) === "ativo");
+  const inactive2h = profiles.filter((p) => computePresenceStatus(p.last_activity_at) === "inativo");
+
+  widget.hidden = false;
+  countEl.textContent = String(active.length);
+
+  const shown = active.slice(0, SIDEBAR_PRESENCE_LIMIT);
+  const overflow = active.length - shown.length;
+  listEl.innerHTML =
+    shown.map((p) => `<li class="sidebar-presence-item"><span class="presence-dot presence-dot-ativo"></span>${escapeHtml(p.full_name.split(" ")[0])}</li>`).join("") +
+    (overflow > 0 ? `<li><button type="button" class="sidebar-presence-more" id="sidebar-presence-more">+ ${overflow} ativos</button></li>` : "");
+  root.querySelector("#sidebar-presence-more")?.addEventListener("click", () => {
+    location.hash = "#/presence";
+  });
+
+  alertBtn.hidden = inactive2h.length === 0;
+  if (inactive2h.length > 0) {
+    alertBtn.textContent = `⚠ ${inactive2h.length} inativo${inactive2h.length > 1 ? "s" : ""} +2h`;
+    alertBtn.onclick = () => {
+      location.hash = "#/presence?filter=inativos";
+    };
+  }
+
+  navBadge.hidden = inactive2h.length === 0;
+  if (inactive2h.length > 0) navBadge.textContent = String(inactive2h.length);
 }
 
 function updateBadge(root: HTMLElement, notifications: AppNotification[]): void {

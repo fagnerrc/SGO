@@ -63,6 +63,7 @@ export interface Profile {
   area: string;
   active: boolean;
   capacidade_semanal: number;
+  last_activity_at: string | null;
 }
 
 export type AuditResult = "Aprovada" | "Reprovada";

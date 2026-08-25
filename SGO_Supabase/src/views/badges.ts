@@ -101,6 +101,18 @@ export function routineStatusBadge(status: string): string {
   return badge(ROUTINE_STATUS_LABEL[status] ?? status, ROUTINE_STATUS_COLOR[status] ?? "gray");
 }
 
+export const ROLE_LABELS: Record<string, string> = {
+  colaborador: "Colaborador",
+  gestor: "Gestor de área",
+  diretoria: "Diretoria",
+  auditoria: "Processos e auditoria",
+  admin: "Administrador",
+};
+
+export function roleLabel(role: string): string {
+  return ROLE_LABELS[role] ?? role;
+}
+
 export function initials(name: string): string {
   return name
     .split(/\s+/)
