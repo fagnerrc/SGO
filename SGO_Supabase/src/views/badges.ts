@@ -79,12 +79,6 @@ export function levelBadge(level: string): string {
   return badge(LEVEL_LABEL[level] ?? level, LEVEL_COLOR[level] ?? "gray");
 }
 
-// Marks a task that was born automatically from a Rotina Periódica, so it
-// stays identifiable wherever tasks are listed (section 21 of the spec).
-export function routineBadge(tipo: string): string {
-  return tipo === "Rotina periódica" ? `<span class="badge badge-purple routine-badge">↻ Rotina</span>` : "";
-}
-
 const ROUTINE_STATUS_COLOR: Record<string, string> = {
   ACTIVE: "green",
   PAUSED: "yellow",

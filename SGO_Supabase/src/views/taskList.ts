@@ -3,7 +3,7 @@ import { applyTaskFilters, DEFAULT_FILTERS, type TaskFilterState } from "../lib/
 import { listCompanyProfiles } from "../lib/profiles";
 import { listDeletedTasks, listMyTasks, restoreTask } from "../lib/tasks";
 import type { Profile, Task } from "../lib/types";
-import { priorityBadge, routineBadge, statusBadge, STATUS_CHART_COLORS } from "./badges";
+import { priorityBadge, statusBadge, STATUS_CHART_COLORS } from "./badges";
 import { renderFilterBar } from "./filterBar";
 import { renderNav } from "./nav";
 import { toastError, toastSuccess } from "./toast";
@@ -164,7 +164,7 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
       const card = document.createElement("button");
       card.className = "task-card";
       card.innerHTML = `
-        <span class="task-card-code">${task.code ?? ""} ${priorityBadge(task.prioridade)} ${routineBadge(task.tipo)}</span>
+        <span class="task-card-code">${task.code ?? ""} ${priorityBadge(task.prioridade)}</span>
         <span class="task-card-title">${escapeHtml(task.titulo)}</span>
         <span class="task-card-status">${statusBadge(task.status)}</span>
         <span class="task-card-deadline">${formatPrazo(task.prazo)}</span>

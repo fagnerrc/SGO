@@ -2,7 +2,7 @@ import { applyTaskFilters, DEFAULT_FILTERS, type TaskFilterState } from "../lib/
 import { listCompanyProfiles } from "../lib/profiles";
 import { approvalWaitTask, cancelTask, completeTask, listMyTasks, rejectTask, startTask, waitTask } from "../lib/tasks";
 import type { Profile, Task, TaskStatus } from "../lib/types";
-import { initials, priorityBadge, routineBadge } from "./badges";
+import { initials, priorityBadge } from "./badges";
 import { renderFilterBar } from "./filterBar";
 import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
@@ -310,7 +310,7 @@ function renderCard(task: Task, profileById: Map<string, Profile>): string {
     <article class="kanban-card" draggable="${draggable}" data-task-id="${task.id}">
       <div class="kanban-card-top">
         <span class="kanban-card-code">${task.code ?? ""}</span>
-        ${priorityBadge(task.prioridade)} ${routineBadge(task.tipo)}
+        ${priorityBadge(task.prioridade)}
       </div>
       <span class="kanban-card-title" title="${escapeHtml(task.titulo)}">${escapeHtml(task.titulo)}</span>
       ${

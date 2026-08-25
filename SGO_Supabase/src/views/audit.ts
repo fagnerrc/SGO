@@ -8,7 +8,7 @@
 import { listCompanyProfiles } from "../lib/profiles";
 import { auditTask, getChecklist, listAuditFindings, listPendingAudits, setAuditFindingStatus } from "../lib/tasks";
 import type { AuditFinding, AuditFindingStatus, ChecklistItem, Profile, Task } from "../lib/types";
-import { priorityBadge, riskBadge, routineBadge, statusBadge } from "./badges";
+import { priorityBadge, riskBadge, statusBadge } from "./badges";
 import { openFormModal } from "./modal";
 import { renderNav } from "./nav";
 import { toastError, toastSuccess } from "./toast";
@@ -115,7 +115,7 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
             return `
           <div class="approval-card audit-queue-card" data-task-id="${t.id}">
             <div>
-              <span class="task-card-code">${t.code ?? ""} ${priorityBadge(t.prioridade)} ${routineBadge(t.tipo)}</span>
+              <span class="task-card-code">${t.code ?? ""} ${priorityBadge(t.prioridade)}</span>
               <span class="task-card-title">${escapeHtml(t.titulo)}</span>
               ${t.descricao ? `<span class="audit-queue-desc">${escapeHtml(t.descricao)}</span>` : ""}
               <div class="audit-queue-meta">

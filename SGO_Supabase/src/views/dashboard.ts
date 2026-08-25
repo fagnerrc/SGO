@@ -38,17 +38,19 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
   const trend = computeCompletionsByDay(completions);
 
   // Rotinas Periódicas indicators — admin-only, same restriction as the
-  // module itself (section 26). Reuses the already-fetched `tasks` list
-  // instead of a second query to count today's auto-generated ones.
+  // module itself (section 26). Routine-born tasks are tipo='Tarefa
+  // agendada' now, indistinguishable from a manually created one, so
+  // "generated today" has to come from the routines themselves
+  // (last_occurrence_date) rather than filtering tasks by tipo.
   const profile = await getCachedProfile().catch(() => null);
   let routineStats: { active: number; generatedToday: number } | null = null;
   if (profile?.role === "admin") {
     try {
       const routines = await listRoutines();
-      const todayStr = new Date().toDateString();
+      const todayIso = new Date().toISOString().slice(0, 10);
       routineStats = {
         active: routines.filter((r) => r.status === "ACTIVE").length,
-        generatedToday: tasks.filter((t) => t.tipo === "Rotina periódica" && new Date(t.created_at).toDateString() === todayStr).length,
+        generatedToday: routines.filter((r) => r.last_occurrence_date === todayIso).length,
       };
     } catch {
       // Dashboard still works without these tiles if the routines query fails.
