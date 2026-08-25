@@ -25,6 +25,25 @@ const COLUMNS: TaskStatus[] = [
 
 const TERMINAL: Set<TaskStatus> = new Set(["Concluída", "Auditada", "Cancelada"]);
 
+// The board is for tracking work in flight, not an ever-growing archive —
+// an open task (still actionable) always shows regardless of age, but a
+// terminal one (Concluída/Auditada/Cancelada) only shows if it reached
+// that state today; older finished cards just clutter the columns with
+// nothing left to do on them. concluido_em is the natural "when this
+// happened" timestamp for Concluída/Auditada; Cancelada doesn't set it
+// (see cancel_task(), 0007), so updated_at covers that case too.
+function isKanbanRelevant(task: Task, startOfTodayMs: number): boolean {
+  if (!TERMINAL.has(task.status)) return true;
+  const finishedAt = task.concluido_em ?? task.updated_at;
+  return new Date(finishedAt).getTime() >= startOfTodayMs;
+}
+
+function startOfTodayMs(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 // What a card in status X may legally become, mirroring
 // enforce_task_transition()'s gated_statuses map exactly — dropping
 // anywhere else isn't offered at all rather than failing after the fact.
@@ -157,6 +176,7 @@ export async function renderKanban(root: HTMLElement, onOpenTask: (taskId: strin
   let profiles: Profile[];
   try {
     [tasks, profiles] = await Promise.all([listMyTasks(), listCompanyProfiles()]);
+    tasks = tasks.filter((t) => isKanbanRelevant(t, startOfTodayMs()));
   } catch (err) {
     shell.innerHTML = `<p class="error">Não foi possível carregar o quadro: ${(err as Error).message}</p>`;
     return;
@@ -166,7 +186,7 @@ export async function renderKanban(root: HTMLElement, onOpenTask: (taskId: strin
 
   shell.innerHTML = `
     <h1>Quadro Kanban</h1>
-    <p class="dashboard-subtitle">Arraste um card para uma coluna destacada, ou use o menu "Mover para..." no card.</p>
+    <p class="dashboard-subtitle">Tarefas em aberto e o que foi concluído/cancelado hoje. Arraste um card para uma coluna destacada, ou use o menu "Mover para..." no card.</p>
     <div id="filter-mount"></div>
     <p id="kanban-error" class="error" hidden></p>
     <div id="board-mount"></div>
@@ -182,7 +202,7 @@ export async function renderKanban(root: HTMLElement, onOpenTask: (taskId: strin
 
   async function reload(): Promise<void> {
     try {
-      tasks = await listMyTasks();
+      tasks = (await listMyTasks()).filter((t) => isKanbanRelevant(t, startOfTodayMs()));
     } catch (err) {
       showError(err);
       return;
