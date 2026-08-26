@@ -2,6 +2,7 @@ import { completeTask, listOpenTimerTasks, pauseTask, resumeTask, startTask } fr
 import type { Task } from "../lib/types";
 import { openFormModal } from "./modal";
 import { getCachedProfile } from "./nav";
+import { toastError } from "./toast";
 
 // Rendered into a mount point outside #app (see main.ts / index.html) so
 // it survives every route's `root.innerHTML = ...` re-render — the whole
@@ -164,6 +165,8 @@ function render(): void {
   dockEl.querySelector("#timer-dock-pause")?.addEventListener("click", async () => {
     try {
       await pauseTask(primary.id);
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : String(err));
     } finally {
       await refreshTimerDock();
     }
@@ -171,6 +174,8 @@ function render(): void {
   dockEl.querySelector("#timer-dock-resume")?.addEventListener("click", async () => {
     try {
       await (primary.status === "Em andamento" ? resumeTask(primary.id) : startTask(primary.id));
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : String(err));
     } finally {
       await refreshTimerDock();
     }
@@ -187,6 +192,8 @@ function render(): void {
     if (!values) return;
     try {
       await completeTask(primary.id, values.evidencia, values.justificativa);
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : String(err));
     } finally {
       await refreshTimerDock();
     }
@@ -203,6 +210,8 @@ function render(): void {
       const task = others.find((t) => t.id === taskId);
       try {
         await (task?.status === "Em andamento" ? resumeTask(taskId) : startTask(taskId));
+      } catch (err) {
+        toastError(err instanceof Error ? err.message : String(err));
       } finally {
         othersExpanded = false;
         await refreshTimerDock();
