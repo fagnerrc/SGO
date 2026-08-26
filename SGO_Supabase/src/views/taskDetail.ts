@@ -47,11 +47,27 @@ function prazoIndicator(task: Task): { label: string; className: string } | null
 // gets the running session folded into it when the timer actually stops
 // (pause/complete), so displaying that field alone while running just
 // shows whatever it was at the last stop, frozen, which is exactly the
-// "não está contando" bug this fixes.
+// "não está contando" bug this fixes. Only meaningful for a Cronômetro
+// task, where the timer genuinely tracks continuous active work — a
+// Tarefa Agendada's timer auto-starts at creation and can legitimately
+// sit "running" for days while nobody is actively working it, so showing
+// its live elapsed time as "tempo gasto" would be actively misleading
+// (and, if that number ever fed into a report, wrong). Those show
+// estimativa instead — see formatEstimativa() below.
 function liveElapsedMs(task: Task): number {
   if (task.timer_state !== "running") return task.timer_total_ms;
   const activeStarted = task.timer_active_started_at ? new Date(task.timer_active_started_at).getTime() : Date.now();
   return task.timer_total_ms + Math.max(0, Date.now() - activeStarted);
+}
+
+function formatEstimativa(hours: number): string {
+  if (!hours || hours <= 0) return "—";
+  const totalMinutes = Math.round(hours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h > 0 && m > 0) return `${h}h ${m}min`;
+  if (h > 0) return `${h}h`;
+  return `${m}min`;
 }
 
 let tickHandle: ReturnType<typeof setInterval> | null = null;
@@ -90,7 +106,7 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
         </p>
 
         ${
-          task.data_inicio || task.prazo || !isTimed
+          task.data_inicio || task.prazo || task.tipo === "Tarefa agendada"
             ? `
         <section class="schedule-panel">
           ${task.data_inicio ? `<p><strong>Início:</strong> ${formatDateTime(task.data_inicio)}</p>` : ""}
@@ -104,7 +120,7 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
                 }</p>`
               : ""
           }
-          ${!isTimed ? `<p><strong>Tempo gasto:</strong> <span id="schedule-tempo-gasto">${formatDuration(liveElapsedMs(task))}</span></p>` : ""}
+          ${task.tipo === "Tarefa agendada" ? `<p><strong>Estimativa:</strong> ${formatEstimativa(task.estimativa)}</p>` : ""}
         </section>`
             : ""
         }
@@ -212,13 +228,10 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
     onBack();
   });
 
-  if (timerRunning) {
+  if (timerRunning && isTimed) {
     tickHandle = setInterval(() => {
-      const elapsed = formatDuration(liveElapsedMs(task));
       const timerEl = root.querySelector<HTMLParagraphElement>("#timer-total-live");
-      if (timerEl) timerEl.textContent = elapsed;
-      const scheduleEl = root.querySelector<HTMLSpanElement>("#schedule-tempo-gasto");
-      if (scheduleEl) scheduleEl.textContent = elapsed;
+      if (timerEl) timerEl.textContent = formatDuration(liveElapsedMs(task));
     }, 1000);
   }
 
