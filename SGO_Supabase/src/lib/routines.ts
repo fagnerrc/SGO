@@ -44,6 +44,7 @@ export interface RoutineInput {
   checklistTemplate?: string[];
   creationTime?: string; // "HH:MM"
   deadlineTime?: string;
+  estimativa?: number; // horas — carried onto every task the routine generates (0045)
 }
 
 export const createRoutine = (input: RoutineInput) =>
@@ -62,6 +63,7 @@ export const createRoutine = (input: RoutineInput) =>
     p_checklist_template: input.checklistTemplate ?? [],
     p_creation_time: input.creationTime ?? "08:00",
     p_deadline_time: input.deadlineTime ?? "18:00",
+    p_estimativa: input.estimativa ?? 0,
   });
 
 export const updateRoutine = (routineId: string, input: RoutineInput) =>
@@ -80,6 +82,7 @@ export const updateRoutine = (routineId: string, input: RoutineInput) =>
     p_evidence_required: input.evidenceRequired ?? false,
     p_creation_time: input.creationTime ?? "08:00",
     p_deadline_time: input.deadlineTime ?? "18:00",
+    p_estimativa: input.estimativa ?? 0,
   });
 
 export const updateRoutineChecklist = (routineId: string, items: string[]) =>

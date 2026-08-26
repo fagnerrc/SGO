@@ -164,6 +164,9 @@ function renderPage(shell: HTMLDivElement, routines: Routine[], profiles: Profil
           </div>
         </div>
 
+        <label for="r-estimativa">Esforço estimado (horas)</label>
+        <input id="r-estimativa" type="number" min="0" step="0.5" value="${editing?.estimativa ?? 0}" />
+
         <label>Checklist da rotina</label>
         <ul id="r-checklist-builder" class="checklist-builder"></ul>
         <div class="checklist-add-row">
@@ -277,6 +280,7 @@ function renderPage(shell: HTMLDivElement, routines: Routine[], profiles: Profil
         checklistTemplate: checklistItems,
         creationTime: (shell.querySelector("#r-creation-time") as HTMLInputElement).value || "08:00",
         deadlineTime: (shell.querySelector("#r-deadline-time") as HTMLInputElement).value || "18:00",
+        estimativa: Number((shell.querySelector("#r-estimativa") as HTMLInputElement).value || 0),
       };
       if (editing) {
         await updateRoutine(editing.id, input);

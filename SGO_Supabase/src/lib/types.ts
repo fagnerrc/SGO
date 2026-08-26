@@ -138,6 +138,7 @@ export interface Routine {
   tags: string[];
   evidence_required: boolean;
   checklist_template: string[];
+  estimativa: number;
   week_days: string[];
   creation_time: string; // "HH:MM:SS"
   deadline_time: string;
