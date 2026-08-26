@@ -90,7 +90,7 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
         </p>
 
         ${
-          task.data_inicio || task.prazo || (!isTimed && task.timer_total_ms > 0)
+          task.data_inicio || task.prazo || !isTimed
             ? `
         <section class="schedule-panel">
           ${task.data_inicio ? `<p><strong>Início:</strong> ${formatDateTime(task.data_inicio)}</p>` : ""}
@@ -104,7 +104,7 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
                 }</p>`
               : ""
           }
-          ${!isTimed ? `<p><strong>Tempo gasto:</strong> ${formatDuration(task.timer_total_ms)}</p>` : ""}
+          ${!isTimed ? `<p><strong>Tempo gasto:</strong> <span id="schedule-tempo-gasto">${formatDuration(liveElapsedMs(task))}</span></p>` : ""}
         </section>`
             : ""
         }
@@ -214,9 +214,11 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
 
   if (timerRunning) {
     tickHandle = setInterval(() => {
-      const timeEl = root.querySelector<HTMLParagraphElement>("#timer-total-live");
-      if (!timeEl) return;
-      timeEl.textContent = formatDuration(liveElapsedMs(task));
+      const elapsed = formatDuration(liveElapsedMs(task));
+      const timerEl = root.querySelector<HTMLParagraphElement>("#timer-total-live");
+      if (timerEl) timerEl.textContent = elapsed;
+      const scheduleEl = root.querySelector<HTMLSpanElement>("#schedule-tempo-gasto");
+      if (scheduleEl) scheduleEl.textContent = elapsed;
     }, 1000);
   }
 
