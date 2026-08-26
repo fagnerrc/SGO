@@ -164,7 +164,7 @@ function renderPage(shell: HTMLDivElement, routines: Routine[], profiles: Profil
           </div>
         </div>
 
-        <label for="r-estimativa">Esforço estimado (horas)</label>
+        <label for="r-estimativa">Esforço (horas)</label>
         <input id="r-estimativa" type="number" min="0" step="0.5" value="${editing?.estimativa ?? 0}" />
 
         <label>Checklist da rotina</label>

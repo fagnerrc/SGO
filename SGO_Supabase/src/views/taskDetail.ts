@@ -120,7 +120,7 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
                 }</p>`
               : ""
           }
-          ${task.tipo === "Tarefa agendada" ? `<p><strong>Estimativa:</strong> ${formatEstimativa(task.estimativa)}</p>` : ""}
+          ${task.tipo === "Tarefa agendada" ? `<p><strong>Esforço:</strong> ${formatEstimativa(task.estimativa)}</p>` : ""}
         </section>`
             : ""
         }

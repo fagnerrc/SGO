@@ -135,7 +135,7 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
       </div>
       <div class="card">
         <h3>Carga por colaborador</h3>
-        <p class="dashboard-subtitle" style="margin-bottom:0.75rem">Estimativa das tarefas abertas ÷ capacidade semanal cadastrada.</p>
+        <p class="dashboard-subtitle" style="margin-bottom:0.75rem">Esforço das tarefas abertas ÷ capacidade semanal cadastrada.</p>
         <div class="workload-list">
           ${
             workload

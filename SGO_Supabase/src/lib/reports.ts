@@ -103,7 +103,7 @@ function csvEscape(value: string): string {
 }
 
 export function tasksToCSV(tasks: Task[], profileById: Map<string, Profile>): string {
-  const header = ["Código", "Título", "Área", "Responsável", "Status", "Prioridade", "Risco", "Prazo", "Concluído em", "Estimativa (h)", "Tempo rastreado (h)"];
+  const header = ["Código", "Título", "Área", "Responsável", "Status", "Prioridade", "Risco", "Prazo", "Concluído em", "Esforço (h)", "Tempo rastreado (h)"];
   const rows = tasks.map((t) => [
     t.code ?? "",
     t.titulo,

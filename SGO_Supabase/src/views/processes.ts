@@ -99,7 +99,7 @@ function renderPage(shell: HTMLDivElement, processes: Process[], profiles: Profi
             <select id="p-risco">${RISCO_OPTIONS.map((r) => `<option${r === (editing?.risco ?? "Médio") ? " selected" : ""}>${r}</option>`).join("")}</select>
           </div>
           <div>
-            <label for="p-estimativa">Estimativa padrão (horas)</label>
+            <label for="p-estimativa">Esforço padrão (horas)</label>
             <input id="p-estimativa" type="number" min="0" step="0.5" value="${editing?.estimativa_padrao ?? 1}" />
           </div>
         </div>

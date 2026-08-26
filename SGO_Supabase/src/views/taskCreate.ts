@@ -68,7 +68,7 @@ export async function renderTaskCreate(root: HTMLElement, onCreated: (taskId: st
         </div>
         <p id="date-range-error" class="error" hidden></p>
 
-        <label for="estimativa">Estimativa (horas)</label>
+        <label for="estimativa">Esforço (horas)</label>
         <input id="estimativa" name="estimativa" type="number" min="0" step="0.5" value="0" />
 
         <div class="task-form-row">
