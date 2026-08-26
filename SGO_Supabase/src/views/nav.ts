@@ -1,7 +1,7 @@
 import { applyBranding, getBranding, type Branding } from "../lib/branding";
 import { logout } from "../lib/auth";
 import { listMyNotifications, markNotificationRead, type AppNotification } from "../lib/notifications";
-import { getMyProfile } from "../lib/profiles";
+import { getCachedProfile } from "../lib/profiles";
 import { computePresenceStatus, getCachedTeamPresence, initPresenceHeartbeat, type TeamPresenceRow } from "../lib/presence";
 import { clearSession } from "../lib/session";
 import { createTask, listMyTasks, startTask } from "../lib/tasks";
@@ -28,16 +28,11 @@ export type PageKey =
 
 const PRIVILEGED_ROLES = new Set(["admin", "diretoria", "auditoria"]);
 
-// Cached for the lifetime of the tab — every page needs it just to decide
-// whether to show role-gated links, and re-fetching it on every single
-// navigation would be wasteful. Cleared on logout by virtue of a fresh
-// page load being required to log back in.
-let cachedProfile: Profile | null = null;
-
-export async function getCachedProfile(): Promise<Profile> {
-  if (!cachedProfile) cachedProfile = await getMyProfile();
-  return cachedProfile;
-}
+// Re-exported so every existing `import { getCachedProfile } from "./nav"`
+// keeps working — the actual cache now lives in lib/profiles.ts (next to
+// clearCachedProfile(), which lib/auth.ts calls on login/logout; a view
+// module isn't a sensible thing for a lib module to depend on).
+export { getCachedProfile };
 
 // Search and notifications both want "all my tasks" / "my notifications"
 // without every page paying for a fresh fetch — cached per tab, cleared

@@ -51,6 +51,24 @@ export async function getMyProfile(): Promise<Profile> {
   return data as Profile;
 }
 
+// Cached for the tab's lifetime — every page needs it just to decide
+// whether to show role-gated links, and re-fetching on every single
+// navigation would be wasteful. MUST be cleared on logout and on every
+// fresh login (see clearCachedProfile() and lib/auth.ts) — without that,
+// logging out and back in as someone else in the same tab kept showing
+// the previous person's name/role/permissions, because this simply never
+// re-fetched once set.
+let cachedProfile: Profile | null = null;
+
+export async function getCachedProfile(): Promise<Profile> {
+  if (!cachedProfile) cachedProfile = await getMyProfile();
+  return cachedProfile;
+}
+
+export function clearCachedProfile(): void {
+  cachedProfile = null;
+}
+
 export interface NewCollaboratorInput {
   email: string;
   fullName: string;

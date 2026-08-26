@@ -1,5 +1,20 @@
+import { resetBrandingCache } from "./branding";
+import { clearCachedTeamPresence } from "./presence";
+import { clearCachedProfile } from "./profiles";
 import { anonClient, getClient, resetClientCache } from "./supabase";
 import { clearSession, saveSession, type Session } from "./session";
+
+// Every in-memory, tab-lifetime cache keyed to "whoever is currently
+// logged in" — must be dropped on both login and logout, or the next
+// person to use this tab (a shared computer, or just switching accounts
+// without closing the tab) keeps seeing the previous person's name, role,
+// and menu permissions even though the actual session token underneath
+// has already changed. This was a real bug: nothing ever called this.
+function clearUserScopedCaches(): void {
+  clearCachedProfile();
+  clearCachedTeamPresence();
+  resetBrandingCache();
+}
 
 export interface LoginError {
   errorCode: string;
@@ -28,6 +43,7 @@ export async function login(email: string, pin: string): Promise<Session | Login
   };
   saveSession(session);
   resetClientCache();
+  clearUserScopedCaches();
   return session;
 }
 
@@ -37,6 +53,7 @@ export async function logout(): Promise<void> {
   } finally {
     clearSession();
     resetClientCache();
+    clearUserScopedCaches();
   }
 }
 

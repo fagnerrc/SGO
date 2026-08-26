@@ -101,6 +101,11 @@ let cachedTeam: TeamPresenceRow[] | null = null;
 let cachedTeamAt = 0;
 const TEAM_CACHE_MS = 60_000;
 
+export function clearCachedTeamPresence(): void {
+  cachedTeam = null;
+  cachedTeamAt = 0;
+}
+
 export async function getCachedTeamPresence(forceRefresh = false): Promise<TeamPresenceRow[]> {
   if (!forceRefresh && cachedTeam && Date.now() - cachedTeamAt < TEAM_CACHE_MS) return cachedTeam;
   cachedTeam = await listTeamPresence();
