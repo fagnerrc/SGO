@@ -91,19 +91,36 @@ export function initTimerDock(container: HTMLElement): void {
   if (!tickHandle) tickHandle = setInterval(tick, 1000);
 }
 
+// refreshTimerDock() is called from several independent, overlapping
+// triggers — a 20s poll, every hashchange, and after every pause/resume/
+// complete action — with no sequencing between them. Network responses
+// don't always resolve in the order they were sent; without a guard, a
+// slower call issued earlier can land AFTER a faster one and overwrite
+// `openTasks` with stale data, corrupting what's on screen (the elapsed
+// time visibly jumping backward/forward, a just-paused timer looking
+// like it's still running, the whole widget seeming to "freeze" on an
+// out-of-date snapshot). This token discards any response that isn't
+// from the most recently issued call.
+let refreshToken = 0;
+
 export async function refreshTimerDock(): Promise<void> {
   if (!dockEl) return;
   if (!localStorage.getItem("sgo.session") || location.hash === "#/login") {
+    refreshToken += 1;
     openTasks = [];
     dockEl.innerHTML = "";
     return;
   }
+  const myToken = ++refreshToken;
+  let fetched: Task[];
   try {
     const profile = await getCachedProfile();
-    openTasks = await listOpenTimerTasks(profile.id);
+    fetched = await listOpenTimerTasks(profile.id);
   } catch {
-    openTasks = [];
+    fetched = [];
   }
+  if (myToken !== refreshToken) return; // a newer refresh already started (or finished) — this result is stale
+  openTasks = fetched;
   render();
 }
 
