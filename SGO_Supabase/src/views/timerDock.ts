@@ -165,6 +165,7 @@ function render(): void {
                 <div class="timer-dock-other-item">
                   <span class="timer-dock-other-title" title="${escapeHtml(t.titulo)}">${t.code ?? ""} ${escapeHtml(t.titulo)}</span>
                   <button type="button" class="link-button timer-dock-other-resume" data-task-id="${t.id}">Retomar</button>
+                  <button type="button" class="link-button timer-dock-other-complete" data-task-id="${t.id}">Concluir</button>
                 </div>`,
                 )
                 .join("")}
@@ -197,24 +198,7 @@ function render(): void {
       await refreshTimerDock();
     }
   });
-  dockEl.querySelector("#timer-dock-complete")!.addEventListener("click", async () => {
-    const values = await openFormModal({
-      title: "Concluir tarefa",
-      fields: [
-        { name: "evidencia", label: "Evidência de execução", type: "textarea", required: true },
-        { name: "justificativa", label: "Justificativa de atraso (se aplicável)", type: "textarea" },
-      ],
-      confirmLabel: "Concluir",
-    });
-    if (!values) return;
-    try {
-      await completeTask(primary.id, values.evidencia, values.justificativa);
-    } catch (err) {
-      toastError(err instanceof Error ? err.message : String(err));
-    } finally {
-      await refreshTimerDock();
-    }
-  });
+  dockEl.querySelector("#timer-dock-complete")!.addEventListener("click", () => void completeTaskFlow(primary.id));
   dockEl.querySelector("#timer-dock-others-toggle")?.addEventListener("click", () => {
     othersExpanded = !othersExpanded;
     const panel = dockEl?.querySelector<HTMLElement>("#timer-dock-others-panel");
@@ -235,7 +219,39 @@ function render(): void {
       }
     });
   });
+  // A non-primary open task previously had no way to be completed except
+  // resuming it first (making it primary) — with several tasks open at
+  // once (the whole point of the multi-timer feature), that extra step
+  // was easy to skip, and open tasks just piled up unfinished. Completing
+  // doesn't require the timer to be running (complete_task() folds in
+  // whatever's already tracked regardless of state), so this can go
+  // straight to the same modal without resuming anything first.
+  dockEl.querySelectorAll<HTMLButtonElement>(".timer-dock-other-complete").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void completeTaskFlow(btn.dataset.taskId!);
+    });
+  });
   tick();
+}
+
+async function completeTaskFlow(taskId: string): Promise<void> {
+  const values = await openFormModal({
+    title: "Concluir tarefa",
+    fields: [
+      { name: "evidencia", label: "Evidência de execução", type: "textarea", required: true },
+      { name: "justificativa", label: "Justificativa de atraso (se aplicável)", type: "textarea" },
+    ],
+    confirmLabel: "Concluir",
+  });
+  if (!values) return;
+  try {
+    await completeTask(taskId, values.evidencia, values.justificativa);
+  } catch (err) {
+    toastError(err instanceof Error ? err.message : String(err));
+  } finally {
+    await refreshTimerDock();
+  }
 }
 
 function tick(): void {

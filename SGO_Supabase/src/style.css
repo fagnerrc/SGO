@@ -2239,9 +2239,11 @@ a {
   font-size: 0.8rem;
   color: var(--text);
 }
-.timer-dock-other-resume {
+.timer-dock-other-resume,
+.timer-dock-other-complete {
   flex: 0 0 auto;
   font-size: 0.76rem;
+  white-space: nowrap;
 }
 @media (max-width: 640px) {
   .timer-dock {

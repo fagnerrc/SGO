@@ -64,8 +64,16 @@ export async function listMyTasks(): Promise<Task[]> {
 }
 
 export async function getTask(taskId: string): Promise<Task> {
-  const { data, error } = await getClient().from("tasks").select("*").eq("id", taskId).single();
+  // maybeSingle(), not single(): a task that doesn't exist OR one RLS is
+  // hiding (reassigned away from you, deleted, wrong company) both come
+  // back as zero rows — single() turned that into a raw PostgREST
+  // "Cannot coerce the result to a single JSON object", which is exactly
+  // what a real user hit clicking into a task they'd lost access to.
+  const { data, error } = await getClient().from("tasks").select("*").eq("id", taskId).maybeSingle();
   if (error) throwSupabaseError(error);
+  if (!data) {
+    throw new Error("SGO_TASK_NOT_FOUND: tarefa não encontrada ou você não tem acesso a ela");
+  }
   return data as Task;
 }
 
