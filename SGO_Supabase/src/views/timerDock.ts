@@ -254,14 +254,28 @@ async function completeTaskFlow(taskId: string): Promise<void> {
   }
 }
 
+// A Cronômetro keeps counting until someone explicitly pauses or
+// completes it — nothing stops it on its own, by design. Found a real
+// task left running for 173 hours straight (nearly a week) because
+// nobody came back to it; "conclude it and the timer stops" was already
+// true (complete_task() unconditionally does that), the actual gap was
+// that a forgotten *running* timer was invisible until it was already
+// absurd. This flags the dock once a single continuous run — not the
+// accumulated total, which can legitimately span days across many
+// pause/resume cycles — passes a plainly-not-still-at-your-desk length.
+const STALE_RUNNING_MS = 4 * 60 * 60 * 1000; // 4h
+
 function tick(): void {
   if (openTasks.length === 0 || !dockEl) return;
   const primary = openTasks[0];
   const timeEl = dockEl.querySelector<HTMLSpanElement>("#timer-dock-time");
-  if (!timeEl) return;
+  const dockNode = dockEl.querySelector<HTMLElement>(".timer-dock");
+  if (!timeEl || !dockNode) return;
   const activeStarted = primary.timer_state === "running" && primary.timer_active_started_at ? new Date(primary.timer_active_started_at).getTime() : null;
-  const elapsed = primary.timer_total_ms + (activeStarted ? Math.max(0, Date.now() - activeStarted) : 0);
+  const runningFor = activeStarted ? Math.max(0, Date.now() - activeStarted) : 0;
+  const elapsed = primary.timer_total_ms + runningFor;
   timeEl.textContent = formatDuration(elapsed);
+  dockNode.classList.toggle("timer-dock-stale", runningFor > STALE_RUNNING_MS);
 }
 
 function formatDuration(ms: number): string {

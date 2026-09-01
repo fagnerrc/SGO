@@ -2133,6 +2133,16 @@ a {
   border-radius: 999px;
   box-shadow: var(--shadow-md);
 }
+.timer-dock-stale {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: var(--red-soft);
+}
+.timer-dock-stale .timer-dock-time {
+  color: var(--red);
+}
+.timer-dock-stale .timer-dock-time::before {
+  content: "⚠ ";
+}
 .timer-dock-dragging {
   box-shadow: var(--shadow-md), 0 0 0 3px var(--focus-ring);
   transition: none;
