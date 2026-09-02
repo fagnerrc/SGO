@@ -12,10 +12,13 @@ import {
   getTeamMonthlyReport,
   listMemberOccurrences,
   listTeamMembers,
+  listTeamOccurrences,
+  occurrencesToCSV,
   setTeamMemberStatus,
   updateTeam,
   updateTeamMember,
   type TeamMemberInput,
+  type TeamOccurrenceWithMember,
 } from "../lib/teams";
 import type { Team, TeamMember, TeamMemberOccurrence, TeamMemberReportRow } from "../lib/types";
 import { openFormModal } from "./modal";
@@ -31,6 +34,10 @@ function monthLabel(month: Date): string {
 
 function monthParam(month: Date): string {
   return `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function monthKey(month: Date): string {
+  return monthParam(month).slice(0, 7);
 }
 
 export async function renderTeamDetail(root: HTMLElement, teamId: string, onBack: () => void): Promise<void> {
@@ -62,8 +69,9 @@ export async function renderTeamDetail(root: HTMLElement, teamId: string, onBack
 
   async function renderPage(): Promise<void> {
     let report: TeamMemberReportRow[];
+    let allOccurrences: TeamOccurrenceWithMember[];
     try {
-      report = await getTeamMonthlyReport(teamId, monthParam(currentMonth));
+      [report, allOccurrences] = await Promise.all([getTeamMonthlyReport(teamId, monthParam(currentMonth)), listTeamOccurrences(teamId)]);
     } catch (err) {
       shell.innerHTML = `<p class="error">Não foi possível carregar o relatório: ${(err as Error).message}</p>`;
       return;
@@ -72,6 +80,7 @@ export async function renderTeamDetail(root: HTMLElement, teamId: string, onBack
     const activeCount = members.filter((m) => m.status === "ATIVO").length;
     const totalOccurrences = report.reduce((sum, r) => sum + r.occurrence_count, 0);
     const totalDeducted = report.reduce((sum, r) => sum + r.points_deducted, 0);
+    const monthOccurrences = allOccurrences.filter((o) => o.occurred_at.slice(0, 7) === monthKey(currentMonth));
 
     shell.innerHTML = `
       <button id="back-btn" class="link-button" style="margin-bottom:0.6rem">&larr; Voltar</button>
@@ -109,6 +118,25 @@ export async function renderTeamDetail(root: HTMLElement, teamId: string, onBack
             <tr><th>Nome</th><th>Função</th><th>Matrícula</th><th>Status</th><th>Ocorrências</th><th>Pontos</th><th></th></tr>
           </thead>
           <tbody id="member-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="card table-card" style="margin-top:1rem">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.6rem; padding:1.1rem 1.4rem 0">
+          <div>
+            <h3 style="margin:0">Relatório de ocorrências</h3>
+            <p class="dashboard-subtitle" style="margin:0.15rem 0 0">${monthLabel(currentMonth)} — todos os integrantes</p>
+          </div>
+          <button type="button" id="export-occurrences-btn" class="btn-primary">Exportar CSV</button>
+        </div>
+        <table class="data-table" style="margin-top:0.9rem">
+          <colgroup>
+            <col style="width:18%" /><col style="width:10%" /><col style="width:16%" /><col style="width:38%" /><col style="width:9%" />
+          </colgroup>
+          <thead>
+            <tr><th>Integrante</th><th>Data</th><th>Motivo</th><th>Descrição</th><th>Pontos</th></tr>
+          </thead>
+          <tbody id="occurrence-rows"></tbody>
         </table>
       </div>
     `;
@@ -176,6 +204,34 @@ export async function renderTeamDetail(root: HTMLElement, teamId: string, onBack
           toastError(err instanceof Error ? err.message : String(err));
         }
       });
+    });
+
+    const occurrenceRowsEl = shell.querySelector<HTMLTableSectionElement>("#occurrence-rows")!;
+    occurrenceRowsEl.innerHTML =
+      monthOccurrences
+        .map(
+          (o) => `
+      <tr>
+        <td class="cell-primary">${escapeHtml(o.member_name)}</td>
+        <td data-label="Data">${new Date(o.occurred_at).toLocaleDateString("pt-BR")}</td>
+        <td data-label="Motivo" class="wrap-cell">${escapeHtml(o.motivo)}</td>
+        <td data-label="Descrição" class="wrap-cell">${escapeHtml(o.descricao)}</td>
+        <td data-label="Pontos"><strong>-${o.points_deducted}</strong></td>
+      </tr>`,
+        )
+        .join("") || `<tr><td colspan="5" class="dropdown-empty">Nenhuma ocorrência registrada neste mês.</td></tr>`;
+
+    shell.querySelector("#export-occurrences-btn")!.addEventListener("click", () => {
+      const csv = occurrencesToCSV(monthOccurrences);
+      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `SGO_Ocorrencias_${team.name.replace(/\s+/g, "_")}_${monthKey(currentMonth)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     });
   }
 

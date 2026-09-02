@@ -41,6 +41,38 @@ export async function listMemberOccurrences(memberId: string): Promise<TeamMembe
   return data as TeamMemberOccurrence[];
 }
 
+export interface TeamOccurrenceWithMember extends TeamMemberOccurrence {
+  member_name: string;
+}
+
+// All occurrences for every member of a team, regardless of month — the
+// view slices this by competência client-side (same approach as the
+// per-member history modal), so a report covering the whole team never
+// needs a second round-trip when the user flips months.
+export async function listTeamOccurrences(teamId: string): Promise<TeamOccurrenceWithMember[]> {
+  const { data, error } = await getClient()
+    .from("team_member_occurrences")
+    .select("*, team_members!inner(name, team_id)")
+    .eq("team_members.team_id", teamId)
+    .order("occurred_at", { ascending: false });
+  if (error) throwSupabaseError(error);
+  return (data as (TeamMemberOccurrence & { team_members: { name: string } })[]).map((row) => ({
+    ...row,
+    member_name: row.team_members.name,
+  }));
+}
+
+function csvEscape(value: string): string {
+  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+export function occurrencesToCSV(rows: TeamOccurrenceWithMember[]): string {
+  const header = ["Integrante", "Data", "Motivo", "Descrição", "Observação", "Pontos descontados"];
+  const csvRows = rows.map((o) => [o.member_name, o.occurred_at, o.motivo, o.descricao, o.observacao, String(o.points_deducted)]);
+  return [header, ...csvRows].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
 // p_month accepts any date within the target month (the RPC truncates
 // to month-start itself) — pass undefined for "the current month".
 export async function getTeamMonthlyReport(teamId: string, month?: string): Promise<TeamMemberReportRow[]> {
