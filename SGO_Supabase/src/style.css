@@ -1376,6 +1376,42 @@ a {
   color: #fff;
 }
 
+/* Month navigator (e.g. Equipes — competência) */
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+.month-nav-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.month-nav-btn:hover {
+  background: var(--surface-strong);
+}
+.month-nav-label {
+  min-width: 172px;
+  text-align: center;
+  padding: 0.5rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: var(--heading);
+}
+
 /* Presença / Atividade da Equipe */
 
 .presence-search {
@@ -1882,6 +1918,12 @@ a {
 .data-table .cell-primary {
   font-weight: 700;
   color: var(--heading);
+}
+.data-table td.actions-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
 }
 .data-table .cell-secondary {
   color: var(--muted);

@@ -74,37 +74,42 @@ export async function renderTeamDetail(root: HTMLElement, teamId: string, onBack
     const totalDeducted = report.reduce((sum, r) => sum + r.points_deducted, 0);
 
     shell.innerHTML = `
+      <button id="back-btn" class="link-button" style="margin-bottom:0.6rem">&larr; Voltar</button>
       <header class="app-header">
         <div>
-          <button id="back-btn" class="link-button">&larr; Voltar</button>
           <h1>${escapeHtml(team.name)}</h1>
-          <p class="dashboard-subtitle">Equipe interna — os integrantes não são usuários do SGO. <button type="button" id="edit-team-btn" class="link-button">editar equipe</button></p>
+          <p class="dashboard-subtitle">Equipe interna — os integrantes não são usuários do SGO.</p>
+        </div>
+        <div class="app-header-actions">
+          <button type="button" id="edit-team-btn" class="link-button">Editar equipe</button>
+          <button type="button" id="add-member-btn" class="btn-primary">+ Adicionar integrante</button>
         </div>
       </header>
 
       <div class="kpi-grid">
-        <article class="kpi-tile tile-blue"><span class="kpi-label">Integrantes</span><div class="kpi-value">${members.length}</div><div class="kpi-sub">${activeCount} ativos</div></article>
+        <article class="kpi-tile tile-blue"><span class="kpi-label">Integrantes</span><div class="kpi-value">${members.length}</div><div class="kpi-sub">${activeCount} ${activeCount === 1 ? "ativo" : "ativos"}</div></article>
         <article class="kpi-tile tile-mint"><span class="kpi-label">Pontuação inicial</span><div class="kpi-value">${team.monthly_starting_points}</div></article>
         <article class="kpi-tile tile-lavender"><span class="kpi-label">Ocorrências no mês</span><div class="kpi-value">${totalOccurrences}</div></article>
         <article class="kpi-tile tile-pink"><span class="kpi-label">Pontos perdidos no mês</span><div class="kpi-value">${totalDeducted}</div></article>
       </div>
 
-      <div class="tabs" style="max-width:420px">
-        <button type="button" id="prev-month-btn" class="tab">&larr;</button>
-        <button type="button" class="tab active" disabled>${monthLabel(currentMonth)}</button>
-        <button type="button" id="next-month-btn" class="tab">&rarr;</button>
+      <div class="month-nav">
+        <button type="button" id="prev-month-btn" class="month-nav-btn" aria-label="Mês anterior">&larr;</button>
+        <span class="month-nav-label">${monthLabel(currentMonth)}</span>
+        <button type="button" id="next-month-btn" class="month-nav-btn" aria-label="Próximo mês">&rarr;</button>
       </div>
 
       <div class="card table-card">
         <table class="data-table">
+          <colgroup>
+            <col style="width:18%" /><col style="width:15%" /><col style="width:13%" /><col style="width:10%" />
+            <col style="width:11%" /><col style="width:11%" /><col style="width:22%" />
+          </colgroup>
           <thead>
             <tr><th>Nome</th><th>Função</th><th>Matrícula</th><th>Status</th><th>Ocorrências</th><th>Pontos</th><th></th></tr>
           </thead>
           <tbody id="member-rows"></tbody>
         </table>
-      </div>
-      <div class="app-header-actions">
-        <button type="button" id="add-member-btn" class="btn-primary">+ Adicionar integrante</button>
       </div>
     `;
 
