@@ -117,7 +117,15 @@ export async function refreshTimerDock(): Promise<void> {
     const profile = await getCachedProfile();
     fetched = await listOpenTimerTasks(profile.id);
   } catch {
-    fetched = [];
+    // A transient failure here (a network blip, a slow/dropped request —
+    // this runs unattended every 20s, all day, for everyone) used to fall
+    // through to `fetched = []`, which wiped openTasks and blanked the
+    // whole dock — a still-genuinely-running timer would visibly vanish
+    // from the screen over nothing more than one flaky poll. Bailing out
+    // here instead leaves openTasks and the dock exactly as they were;
+    // the next 20s tick (or the next action-triggered refresh) just
+    // tries again. Nothing to update, nothing torn down.
+    return;
   }
   if (myToken !== refreshToken) return; // a newer refresh already started (or finished) — this result is stale
   openTasks = fetched;
