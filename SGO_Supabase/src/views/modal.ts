@@ -6,7 +6,7 @@
 export interface ModalField {
   name: string;
   label: string;
-  type?: "text" | "textarea" | "select" | "date" | "readonly";
+  type?: "text" | "textarea" | "select" | "date" | "dateonly" | "readonly";
   required?: boolean;
   options?: { value: string; label: string }[]; // for type: "select"
   defaultValue?: string;
@@ -45,7 +45,7 @@ export function openFormModal(options: {
                       <option value="">Selecione...</option>
                       ${(f.options ?? []).map((o) => `<option value="${escapeHtml(o.value)}"${f.defaultValue === o.value ? " selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
                     </select>`
-                  : `<input id="modal-${f.name}" name="${f.name}" type="${f.type === "date" ? "datetime-local" : "text"}" value="${escapeHtml(f.defaultValue ?? "")}" ${f.required ? "required" : ""} />`
+                  : `<input id="modal-${f.name}" name="${f.name}" type="${f.type === "date" ? "datetime-local" : f.type === "dateonly" ? "date" : "text"}" value="${escapeHtml(f.defaultValue ?? "")}" ${f.required ? "required" : ""} />`
             }`,
             )
             .join("")}

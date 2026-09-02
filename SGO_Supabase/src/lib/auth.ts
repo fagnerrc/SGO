@@ -1,6 +1,7 @@
 import { resetBrandingCache } from "./branding";
 import { clearCachedTeamPresence } from "./presence";
 import { clearCachedProfile } from "./profiles";
+import { clearCachedMyTeams } from "./teams";
 import { anonClient, getClient, resetClientCache } from "./supabase";
 import { clearSession, saveSession, type Session } from "./session";
 
@@ -13,6 +14,7 @@ import { clearSession, saveSession, type Session } from "./session";
 function clearUserScopedCaches(): void {
   clearCachedProfile();
   clearCachedTeamPresence();
+  clearCachedMyTeams();
   resetBrandingCache();
 }
 

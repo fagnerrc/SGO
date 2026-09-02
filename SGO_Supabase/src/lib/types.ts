@@ -168,3 +168,65 @@ export interface RoutineHistoryEntry {
   action: string;
   details: Record<string, unknown>;
 }
+
+// Equipes (Teams) — a supervisor's crew, deliberately NOT SGO users
+// (see 0046_teams_module.sql): no login, no PIN, none of the profiles
+// machinery. Team = an SGO-authenticated supervisor (profiles.id) plus
+// a roster of TeamMembers cadastrados manualmente por ele.
+export interface Team {
+  id: string;
+  company_id: string;
+  name: string;
+  supervisor_id: string;
+  monthly_starting_points: number;
+  created_by: string | null;
+  created_at: string;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export type TeamMemberStatus = "ATIVO" | "INATIVO";
+
+export interface TeamMember {
+  id: string;
+  team_id: string;
+  name: string;
+  employee_code: string;
+  role: string;
+  joined_at: string;
+  status: TeamMemberStatus;
+  notes: string;
+  created_by: string | null;
+  created_at: string;
+  updated_by: string | null;
+  updated_at: string;
+  inactivated_at: string | null;
+  inactivated_by: string | null;
+  inactivation_reason: string;
+}
+
+export interface TeamMemberOccurrence {
+  id: string;
+  team_member_id: string;
+  occurred_at: string;
+  points_deducted: number;
+  motivo: string;
+  descricao: string;
+  observacao: string;
+  registered_by: string;
+  created_at: string;
+}
+
+// Result row of team_monthly_report() — starting/final points computed
+// server-side, always derived from occurrences, never a stored field
+// (see 0046 for why: "reset every month" falls out for free that way).
+export interface TeamMemberReportRow {
+  member_id: string;
+  name: string;
+  role: string;
+  status: TeamMemberStatus;
+  starting_points: number;
+  occurrence_count: number;
+  points_deducted: number;
+  final_points: number;
+}

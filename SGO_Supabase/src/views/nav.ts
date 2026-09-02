@@ -5,6 +5,7 @@ import { getCachedProfile } from "../lib/profiles";
 import { computePresenceStatus, getCachedTeamPresence, initPresenceHeartbeat, type TeamPresenceRow } from "../lib/presence";
 import { clearSession } from "../lib/session";
 import { createTask, listMyTasks, startTask } from "../lib/tasks";
+import { getCachedMyTeams } from "../lib/teams";
 import type { Profile, Task } from "../lib/types";
 import { initials } from "./badges";
 import { openFormModal } from "./modal";
@@ -24,6 +25,7 @@ export type PageKey =
   | "processes"
   | "routines"
   | "presence"
+  | "teams"
   | "settings";
 
 const PRIVILEGED_ROLES = new Set(["admin", "diretoria", "auditoria"]);
@@ -99,6 +101,8 @@ const ICONS: Record<PageKey, string> = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><circle cx="19" cy="8" r="3.2" fill="currentColor" stroke="none"/></svg>',
   settings:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  teams:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M12 12v2"/></svg>',
 };
 
 const BELL_ICON =
@@ -153,6 +157,13 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
   // roles plus gestor (an area manager needs their own numbers even
   // without admin/diretoria/auditoria access to everything else).
   const canSeeReports = isPrivileged || profile?.role === "gestor";
+  // Equipes (0046) isn't tied to any global role — it shows up for
+  // whoever actually supervises a team (Fernando, an ordinary
+  // 'colaborador'), discovered by just asking what teams RLS lets them
+  // see, cached per tab like everything else here. Privileged roles get
+  // it too, as an oversight backstop, same as every other module.
+  const myTeams = profile ? await getCachedMyTeams().catch(() => []) : [];
+  const canSeeTeams = isPrivileged || myTeams.length > 0;
 
   const links: { key: PageKey; label: string; href: string }[] = [
     { key: "dashboard", label: "Dashboard", href: "#/dashboard" },
@@ -162,6 +173,7 @@ export async function renderNav(root: HTMLElement, active: PageKey): Promise<voi
     { key: "approvals", label: "Aprovações", href: "#/approvals" },
   ];
   if (canSeeReports) links.push({ key: "reports", label: "Relatórios", href: "#/reports" });
+  if (canSeeTeams) links.push({ key: "teams", label: "Equipes", href: "#/teams" });
   if (isPrivileged) {
     links.push({ key: "audit", label: "Auditoria", href: "#/audit" });
     links.push({ key: "presence", label: "Presença", href: "#/presence" });
