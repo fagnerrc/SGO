@@ -21,6 +21,19 @@ function formatSpentTime(ms: number): string {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+// A Tarefa Agendada (which includes every routine-generated task — see
+// 0044_routine_tasks_look_normal.sql) never runs a real Cronômetro, so
+// its timer_total_ms sits at 0 forever. Showing "00:00:00" as "Tempo
+// gasto" reads as if nothing was done; taskDetail.ts already swaps in
+// the task's esforço (estimativa) for this exact reason (see its
+// formatEstimativa() usage) — mirrored here so the audit views agree.
+function formatTempoGasto(task: { tipo: string; estimativa: number; timer_total_ms: number }): string {
+  if (task.tipo === "Tarefa agendada" && task.estimativa > 0) {
+    return formatSpentTime(task.estimativa * 3600 * 1000);
+  }
+  return formatSpentTime(task.timer_total_ms);
+}
+
 function formatChecklistForDisplay(items: ChecklistItem[]): string {
   if (items.length === 0) return "Sem checklist.";
   return items.map((item) => `${item.feito ? "☑" : "☐"} ${item.texto}`).join("\n");
@@ -121,7 +134,7 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
               <div class="audit-queue-meta">
                 <span>${escapeHtml(responsavel?.full_name ?? "—")}</span>
                 <span>${t.tipo === "Tarefa cronometrada" ? "Cronômetro" : "Agendada"}</span>
-                <span>Tempo gasto: ${formatSpentTime(t.timer_total_ms)}</span>
+                <span>Tempo gasto: ${formatTempoGasto(t)}</span>
                 <span>${statusBadge(t.status)}</span>
                 <span class="approval-waiting-since">concluída em ${t.concluido_em ? new Date(t.concluido_em).toLocaleDateString("pt-BR") : "—"}</span>
               </div>
@@ -152,7 +165,7 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
         { name: "responsavel", label: "Responsável", type: "readonly", defaultValue: responsavel?.full_name ?? "—" },
         { name: "tipo", label: "Tipo", type: "readonly", defaultValue: task?.tipo ?? "—" },
         { name: "prazo_original", label: "Prazo", type: "readonly", defaultValue: task?.prazo ? new Date(task.prazo).toLocaleString("pt-BR") : "—" },
-        { name: "tempo_gasto", label: "Tempo gasto", type: "readonly", defaultValue: task ? formatSpentTime(task.timer_total_ms) : "—" },
+        { name: "tempo_gasto", label: "Tempo gasto", type: "readonly", defaultValue: task ? formatTempoGasto(task) : "—" },
         { name: "checklist_display", label: "Checklist", type: "readonly", defaultValue: formatChecklistForDisplay(checklist) },
         { name: "evidencia_execucao", label: "Evidência de execução", type: "readonly", defaultValue: task?.evidencia || "Nenhuma evidência registrada." },
         {
@@ -287,7 +300,7 @@ async function showFindingDetail(f: AuditFinding, profileById: Map<string, Profi
   const execRows: [string, string][] = task
     ? [
         ["Executado por", responsavel?.full_name ?? "—"],
-        ["Tempo gasto", formatSpentTime(task.timer_total_ms)],
+        ["Tempo gasto", formatTempoGasto(task)],
         ["Tipo", task.tipo],
         ["Status atual", task.status],
         ["Descrição da tarefa", task.descricao || "—"],

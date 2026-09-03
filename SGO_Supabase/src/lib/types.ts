@@ -114,6 +114,7 @@ export interface AuditFinding {
     status: TaskStatus;
     responsavel_id: string;
     timer_total_ms: number;
+    estimativa: number;
     prazo: string | null;
     data_inicio: string | null;
     concluido_em: string | null;
