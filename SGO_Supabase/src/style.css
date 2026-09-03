@@ -2955,3 +2955,20 @@ body:has(#timer-dock-mount .timer-dock) .app-shell { padding-bottom:7rem }
 .sidebar-presence-list::-webkit-scrollbar-thumb { background:rgba(31,122,82,.32);border-radius:999px }
 .sidebar-presence-alert { flex:0 0 auto }
 @media(max-height:720px){.sidebar-brand{padding-bottom:16px}.sidebar-link{padding-top:8px;padding-bottom:8px}.sidebar-presence{max-height:27vh;margin-top:7px}}
+
+/* The active-link "concave cutout" defined earlier in this file bleeds
+   past the sidebar's own right edge via a negative margin, relying on
+   overflow:visible to render — but .sidebar was later set to
+   overflow:hidden (needed so a long nav list can scroll instead of
+   growing the sidebar past the viewport), which clips that bleed at
+   the sidebar's rounded corner and shows up as a broken/jagged edge.
+   Contained pill instead: same highlight, nothing to clip. */
+.sidebar-link.active {
+  margin-right: 0;
+  padding-right: 13px;
+  border-radius: 999px;
+}
+.sidebar-link.active::before,
+.sidebar-link.active::after {
+  display: none;
+}
