@@ -63,6 +63,15 @@ export function resetClientCache(): void {
 // just be noise. Anything else (network failure, an unexpected Postgres
 // error, a PostgREST parsing error) is a real, diagnostics-worthy
 // problem and gets reported best-effort, fire-and-forget.
+// Browsers throw these bare, cryptic messages when a fetch can't even
+// complete — the network dropped, DNS failed, a proxy/VPN hiccuped — as
+// opposed to the server responding with an actual error. The wording
+// differs per browser (Chrome: "Failed to fetch", Safari: "Load failed",
+// Firefox: "NetworkError when attempting to fetch resource"), but none of
+// them mean anything to a non-technical user, so they get replaced with a
+// message that actually says what happened and what to do about it.
+const NETWORK_ERROR_PATTERN = /failed to fetch|networkerror|load failed|network request failed/i;
+
 export function throwSupabaseError(error: { message: string }): never {
   if (!error.message.startsWith("SGO_")) {
     void (async () => {
@@ -78,5 +87,8 @@ export function throwSupabaseError(error: { message: string }): never {
       }
     })();
   }
-  throw new Error(error.message);
+  const friendlyMessage = NETWORK_ERROR_PATTERN.test(error.message)
+    ? "Falha de conexão com o servidor. Verifique sua internet e tente novamente."
+    : error.message;
+  throw new Error(friendlyMessage);
 }
