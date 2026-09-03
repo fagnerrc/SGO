@@ -100,6 +100,10 @@ export async function renderTaskDetail(root: HTMLElement, taskId: string, onBack
       <div class="task-detail">
         <h2>${escapeHtml(task.titulo)}</h2>
         <p class="task-detail-status">${statusBadge(task.status)} ${priorityBadge(task.prioridade)} ${riskBadge(task.risco)}</p>
+        <p class="task-detail-meta">
+          <strong>Criada em:</strong> ${formatDateTime(task.created_at)}
+          ${task.concluido_em ? ` &middot; <strong>Concluída em:</strong> ${formatDateTime(task.concluido_em)}` : ""}
+        </p>
         <p class="task-detail-desc">
           ${escapeHtml(task.descricao)}
           ${!task.excluido ? '<button id="edit-desc-btn" class="link-button">editar</button>' : ""}

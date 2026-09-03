@@ -1198,6 +1198,11 @@ a {
   align-items: center;
   gap: 0.5rem;
 }
+.task-detail-meta {
+  margin: 0.1rem 0 0.6rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
 .task-detail-desc {
   display: flex;
   align-items: baseline;
@@ -2910,3 +2915,43 @@ body:has(#timer-dock-mount .timer-dock) .app-shell { padding-bottom:7rem }
 .sidebar-presence-item { color:#2f463a }
 .sidebar-presence-item:hover { background:#edf6f1 }
 .sidebar-presence-list { max-height:none;overflow:visible }
+
+/* Keep long admin navigation and the full active-team list inside the viewport. */
+.sidebar {
+  overflow:hidden;
+  padding-bottom:12px;
+}
+.sidebar-nav {
+  flex:1 1 auto;
+  min-height:120px;
+  overflow-y:auto;
+  overflow-x:visible;
+  padding-right:3px;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(255,255,255,.28) transparent;
+}
+.sidebar-nav::-webkit-scrollbar { width:4px }
+.sidebar-nav::-webkit-scrollbar-thumb { background:rgba(255,255,255,.28);border-radius:999px }
+.sidebar-presence {
+  flex:0 1 auto;
+  min-height:92px;
+  max-height:min(250px,34vh);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.sidebar-presence[hidden] { display:none }
+.sidebar-presence-header { flex:0 0 auto }
+.sidebar-presence-list {
+  min-height:0;
+  max-height:none;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:3px;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(31,122,82,.32) transparent;
+}
+.sidebar-presence-list::-webkit-scrollbar { width:4px }
+.sidebar-presence-list::-webkit-scrollbar-thumb { background:rgba(31,122,82,.32);border-radius:999px }
+.sidebar-presence-alert { flex:0 0 auto }
+@media(max-height:720px){.sidebar-brand{padding-bottom:16px}.sidebar-link{padding-top:8px;padding-bottom:8px}.sidebar-presence{max-height:27vh;margin-top:7px}}

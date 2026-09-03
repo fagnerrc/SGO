@@ -136,7 +136,8 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
                 <span>${t.tipo === "Tarefa cronometrada" ? "Cronômetro" : "Agendada"}</span>
                 <span>Tempo gasto: ${formatTempoGasto(t)}</span>
                 <span>${statusBadge(t.status)}</span>
-                <span class="approval-waiting-since">concluída em ${t.concluido_em ? new Date(t.concluido_em).toLocaleDateString("pt-BR") : "—"}</span>
+                <span>criada em ${new Date(t.created_at).toLocaleString("pt-BR")}</span>
+                <span class="approval-waiting-since">concluída em ${t.concluido_em ? new Date(t.concluido_em).toLocaleString("pt-BR") : "—"}</span>
               </div>
             </div>
             <div class="approval-actions">
@@ -164,7 +165,9 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
         { name: "descricao", label: "Descrição", type: "readonly", defaultValue: task?.descricao || "—" },
         { name: "responsavel", label: "Responsável", type: "readonly", defaultValue: responsavel?.full_name ?? "—" },
         { name: "tipo", label: "Tipo", type: "readonly", defaultValue: task?.tipo ?? "—" },
+        { name: "criado_em", label: "Criada em", type: "readonly", defaultValue: task ? new Date(task.created_at).toLocaleString("pt-BR") : "—" },
         { name: "prazo_original", label: "Prazo", type: "readonly", defaultValue: task?.prazo ? new Date(task.prazo).toLocaleString("pt-BR") : "—" },
+        { name: "concluido_em", label: "Concluída em", type: "readonly", defaultValue: task?.concluido_em ? new Date(task.concluido_em).toLocaleString("pt-BR") : "—" },
         { name: "tempo_gasto", label: "Tempo gasto", type: "readonly", defaultValue: task ? formatTempoGasto(task) : "—" },
         { name: "checklist_display", label: "Checklist", type: "readonly", defaultValue: formatChecklistForDisplay(checklist) },
         { name: "evidencia_execucao", label: "Evidência de execução", type: "readonly", defaultValue: task?.evidencia || "Nenhuma evidência registrada." },
@@ -250,7 +253,7 @@ export async function renderAudit(root: HTMLElement): Promise<void> {
                 <td data-label="Risco" class="wrap-cell">${riskBadge(f.risco)}</td>
                 <td data-label="Responsável" title="${escapeHtml(responsavel?.full_name ?? "—")}">${escapeHtml(responsavel?.full_name ?? "—")}</td>
                 <td data-label="Prazo">${f.prazo ? new Date(f.prazo).toLocaleDateString("pt-BR") : "—"}</td>
-                <td data-label="Registrado em">${new Date(f.criado_em).toLocaleDateString("pt-BR")}</td>
+                <td data-label="Registrado em">${new Date(f.criado_em).toLocaleString("pt-BR")}</td>
                 <td data-label="Status" class="wrap-cell">
                   <select class="finding-status-select" data-finding-id="${f.id}">
                     ${FINDING_STATUS_OPTIONS.map((s) => `<option value="${s}"${s === f.status ? " selected" : ""}>${s}</option>`).join("")}
@@ -304,6 +307,7 @@ async function showFindingDetail(f: AuditFinding, profileById: Map<string, Profi
         ["Tipo", task.tipo],
         ["Status atual", task.status],
         ["Descrição da tarefa", task.descricao || "—"],
+        ["Criada em", new Date(task.created_at).toLocaleString("pt-BR")],
         ["Início", task.data_inicio ? new Date(task.data_inicio).toLocaleString("pt-BR") : "—"],
         ["Prazo", task.prazo ? new Date(task.prazo).toLocaleString("pt-BR") : "—"],
         ["Concluída em", task.concluido_em ? new Date(task.concluido_em).toLocaleString("pt-BR") : "—"],
