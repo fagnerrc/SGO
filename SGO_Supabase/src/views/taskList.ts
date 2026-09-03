@@ -20,10 +20,11 @@ const ALL_STATUSES = [
   "Cancelada",
 ];
 
-function formatPrazo(prazo: string | null): string {
-  if (!prazo) return "sem prazo";
-  const date = new Date(prazo);
-  const overdue = date.getTime() < Date.now();
+function formatPrazo(task: Task): string {
+  if (!task.prazo) return "sem prazo";
+  const date = new Date(task.prazo);
+  const isTerminal = ["Concluída", "Auditada", "Cancelada"].includes(task.status);
+  const overdue = !isTerminal && date.getTime() < Date.now();
   const formatted = date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   return overdue ? `${formatted} (atrasada)` : formatted;
 }
@@ -46,10 +47,18 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
         <div id="trash-list"><p>Carregando...</p></div>
       </div>
       <div id="filter-mount"></div>
-      <div class="card">
-        <h3>Distribuição por status</h3>
-        <p class="dashboard-subtitle" id="filter-summary" style="margin-bottom:0.75rem"></p>
-        <div class="chart-box chart-box-sm"><canvas id="task-status-chart"></canvas></div>
+      <div class="card dashboard-card task-status-overview-card">
+        <div class="card-heading">
+          <div><span class="eyebrow">Visão do filtro</span><h3>Distribuição por status</h3></div>
+          <p class="chart-caption" id="filter-summary"></p>
+        </div>
+        <div class="task-status-overview">
+          <div class="chart-box donut-chart-box task-status-donut">
+            <canvas id="task-status-chart"></canvas>
+            <div class="donut-center task-status-donut-center"><strong id="task-status-total">0</strong><span>tarefas</span></div>
+          </div>
+          <div class="task-status-summary" id="task-status-summary"></div>
+        </div>
       </div>
       <div id="task-list" class="task-list">Carregando...</div>
     </div>
@@ -64,6 +73,8 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
 
   const listEl = root.querySelector<HTMLDivElement>("#task-list")!;
   const summaryEl = root.querySelector<HTMLParagraphElement>("#filter-summary")!;
+  const statusTotalEl = root.querySelector<HTMLElement>("#task-status-total")!;
+  const statusSummaryEl = root.querySelector<HTMLElement>("#task-status-summary")!;
 
   let tasks: Task[];
   let profiles: Profile[];
@@ -144,15 +155,41 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
 
     const byStatus = new Map<string, number>();
     for (const t of filtered) byStatus.set(t.status, (byStatus.get(t.status) ?? 0) + 1);
-    const labels = Array.from(byStatus.keys());
+    const labels = ALL_STATUSES.filter((status) => (byStatus.get(status) ?? 0) > 0);
+    statusTotalEl.textContent = String(filtered.length);
+    statusSummaryEl.innerHTML = labels.map((status) => {
+      const count = byStatus.get(status) ?? 0;
+      const percentage = filtered.length > 0 ? Math.round((count / filtered.length) * 100) : 0;
+      const color = STATUS_CHART_COLORS[status] ?? "#8892a6";
+      return `<div class="task-status-summary-row">
+        <span class="task-status-summary-dot" style="background:${color}"></span>
+        <span class="task-status-summary-name">${escapeHtml(status)}</span>
+        <strong>${count}</strong>
+        <small>${percentage}%</small>
+        <span class="task-status-summary-track"><i style="width:${percentage}%;background:${color}"></i></span>
+      </div>`;
+    }).join("");
     statusChart?.destroy();
     statusChart = new Chart(chartCtx, {
       type: "doughnut",
       data: {
         labels,
-        datasets: [{ data: labels.map((l) => byStatus.get(l)!), backgroundColor: labels.map((l) => STATUS_CHART_COLORS[l] ?? "#8892a6"), borderWidth: 0 }],
+        datasets: [{
+          data: labels.map((l) => byStatus.get(l)!),
+          backgroundColor: labels.map((l) => STATUS_CHART_COLORS[l] ?? "#8892a6"),
+          borderColor: "#ffffff",
+          borderWidth: 5,
+          borderRadius: 8,
+          hoverOffset: 10,
+        }],
       },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } } },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "74%",
+        animation: { duration: 800, easing: "easeOutQuart" },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: "#20382e", padding: 12, cornerRadius: 10, boxPadding: 4 } },
+      },
     });
 
     if (filtered.length === 0) {
@@ -167,7 +204,7 @@ export async function renderTaskList(root: HTMLElement, onOpenTask: (taskId: str
         <span class="task-card-code">${task.code ?? ""} ${priorityBadge(task.prioridade)}</span>
         <span class="task-card-title">${escapeHtml(task.titulo)}</span>
         <span class="task-card-status">${statusBadge(task.status)}</span>
-        <span class="task-card-deadline">${formatPrazo(task.prazo)}</span>
+        <span class="task-card-deadline">${formatPrazo(task)}</span>
       `;
       card.addEventListener("click", () => onOpenTask(task.id));
       listEl.appendChild(card);

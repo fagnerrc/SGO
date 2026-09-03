@@ -99,14 +99,25 @@ export async function renderReports(root: HTMLElement): Promise<void> {
       </article>
     </div>
 
-    <div class="dashboard-grid">
-      <div class="card">
-        <h3>Distribuição por prioridade</h3>
-        <div class="chart-box chart-box-sm"><canvas id="priority-chart"></canvas></div>
+    <div class="dashboard-grid reports-chart-grid">
+      <div class="card dashboard-card report-priority-card">
+        <div class="card-heading">
+          <div><span class="eyebrow">Composição</span><h3>Distribuição por prioridade</h3></div>
+        </div>
+        <div class="report-priority-overview">
+          <div class="chart-box chart-box-sm donut-chart-box report-priority-donut">
+            <canvas id="priority-chart"></canvas>
+            <div class="donut-center"><strong id="priority-total">0</strong><span>tarefas</span></div>
+          </div>
+          <div class="priority-summary" id="priority-summary"></div>
+        </div>
       </div>
-      <div class="card">
-        <h3>Desempenho por área</h3>
-        <div class="chart-box chart-box-sm"><canvas id="area-chart"></canvas></div>
+      <div class="card dashboard-card report-area-card">
+        <div class="card-heading">
+          <div><span class="eyebrow">Volume operacional</span><h3>Tarefas por área</h3></div>
+          <span class="chart-caption">quantidade no período</span>
+        </div>
+        <div class="chart-box report-area-chart-box"><canvas id="area-chart"></canvas></div>
       </div>
     </div>
 
@@ -132,6 +143,8 @@ export async function renderReports(root: HTMLElement): Promise<void> {
   const trackedCountEl = shell.querySelector<HTMLDivElement>("#kpi-tracked-count")!;
   const rowsEl = shell.querySelector<HTMLTableSectionElement>("#report-rows")!;
   const priorityCtx = shell.querySelector<HTMLCanvasElement>("#priority-chart")!;
+  const priorityTotalEl = shell.querySelector<HTMLElement>("#priority-total")!;
+  const prioritySummaryEl = shell.querySelector<HTMLElement>("#priority-summary")!;
   const areaCtx = shell.querySelector<HTMLCanvasElement>("#area-chart")!;
 
   function update(): void {
@@ -162,29 +175,76 @@ export async function renderReports(root: HTMLElement): Promise<void> {
         .join("") || `<tr><td colspan="7">Nenhuma tarefa encontrada com esses filtros.</td></tr>`;
 
     const byPriority = groupByPriority(filtered);
+    const priorityTotal = byPriority.reduce((total, item) => total + item.count, 0);
+    priorityTotalEl.textContent = String(priorityTotal);
+    prioritySummaryEl.innerHTML = byPriority.map((item) => {
+      const percentage = priorityTotal > 0 ? Math.round((item.count / priorityTotal) * 100) : 0;
+      const color = PRIORITY_CHART_COLORS[item.priority] ?? "#8892a6";
+      return `<div class="priority-summary-row">
+        <span class="priority-summary-dot" style="background:${color}"></span>
+        <span class="priority-summary-name">${escapeHtml(item.priority)}</span>
+        <strong>${item.count}</strong>
+        <small>${percentage}%</small>
+        <span class="priority-summary-track"><i style="width:${percentage}%;background:${color}"></i></span>
+      </div>`;
+    }).join("");
     priorityChart?.destroy();
     priorityChart = new Chart(priorityCtx, {
       type: "doughnut",
       data: {
         labels: byPriority.map((p) => p.priority),
-        datasets: [{ data: byPriority.map((p) => p.count), backgroundColor: byPriority.map((p) => PRIORITY_CHART_COLORS[p.priority] ?? "#8892a6"), borderWidth: 0 }],
+        datasets: [{
+          data: byPriority.map((p) => p.count),
+          backgroundColor: byPriority.map((p) => PRIORITY_CHART_COLORS[p.priority] ?? "#8892a6"),
+          borderColor: "#ffffff",
+          borderWidth: 5,
+          borderRadius: 8,
+          hoverOffset: 12,
+        }],
       },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } } },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "72%",
+        animation: { duration: 900, easing: "easeOutQuart" },
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor: "#20382e", padding: 12, cornerRadius: 10, displayColors: true, boxPadding: 5 },
+        },
+      },
     });
 
-    const byArea = groupByArea(filtered);
+    const allAreas = groupByArea(filtered);
+    const byArea = allAreas.slice(0, 11);
+    const remainingAreas = allAreas.slice(11);
+    if (remainingAreas.length > 0) {
+      byArea.push({ area: `Outras áreas (${remainingAreas.length})`, count: remainingAreas.reduce((total, area) => total + area.count, 0) });
+    }
     areaChart?.destroy();
     areaChart = new Chart(areaCtx, {
       type: "bar",
       data: {
         labels: byArea.map((a) => a.area),
-        datasets: [{ data: byArea.map((a) => a.count), backgroundColor: "#1f6b45", borderRadius: 4 }],
+        datasets: [{
+          data: byArea.map((a) => a.count),
+          backgroundColor: byArea.map((area, index) => area.area.startsWith("Outras áreas") ? "#b7c9c0" : index === 0 ? "#176b48" : index < 3 ? "#3d936d" : "#80bea1"),
+          hoverBackgroundColor: "#155c3c",
+          borderRadius: 8,
+          borderSkipped: false,
+          barThickness: 16,
+        }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        indexAxis: "y",
+        animation: { duration: 850, easing: "easeOutQuart" },
+        interaction: { intersect: false, mode: "index" },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: "#20382e", padding: 12, cornerRadius: 10, displayColors: false } },
+        scales: {
+          x: { beginAtZero: true, border: { display: false }, grid: { color: "rgba(62,91,77,.09)" }, ticks: { precision: 0, color: "#8b96a4", font: { size: 10 } } },
+          y: { border: { display: false }, grid: { display: false }, ticks: { color: "#405249", font: { size: 11, weight: 600 }, autoSkip: false, padding: 8 } },
+        },
       },
     });
   }

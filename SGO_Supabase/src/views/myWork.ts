@@ -51,6 +51,7 @@ export async function renderMyWork(root: HTMLElement, onOpenTask: (taskId: strin
   }
 
   const buckets = bucketMyWork(tasks, myProfileId);
+  const myTaskTotal = TABS.reduce((total, tab) => total + buckets[tab.key].length, 0);
   let active: MyWorkTab = buckets.hoje_atrasadas.length > 0 ? "hoje_atrasadas" : "proximas";
 
   bucketChart?.destroy();
@@ -58,9 +59,30 @@ export async function renderMyWork(root: HTMLElement, onOpenTask: (taskId: strin
   shell.innerHTML = `
     <h1 class="dashboard-title">Meu trabalho</h1>
     <p class="dashboard-subtitle">Só as tarefas em que você é responsável ou participante — separadas pelo que precisa de atenção agora.</p>
-    <div class="card">
-      <h3>Panorama</h3>
-      <div class="chart-box chart-box-sm"><canvas id="mywork-chart"></canvas></div>
+    <div class="card dashboard-card mywork-panorama-card">
+      <div class="card-heading">
+        <div><span class="eyebrow">Distribuição atual</span><h3>Panorama do seu trabalho</h3></div>
+        <span class="chart-caption">${myTaskTotal} no seu fluxo</span>
+      </div>
+      <div class="mywork-overview">
+        <div class="chart-box mywork-chart-box donut-chart-box">
+          <canvas id="mywork-chart"></canvas>
+          <div class="donut-center mywork-donut-center"><strong>${myTaskTotal}</strong><span>tarefas</span></div>
+        </div>
+        <div class="mywork-chart-summary">
+          ${TABS.map((tab) => {
+            const count = buckets[tab.key].length;
+            const percentage = myTaskTotal > 0 ? Math.round((count / myTaskTotal) * 100) : 0;
+            return `<div class="mywork-summary-row">
+              <span class="mywork-summary-dot" style="background:${BUCKET_CHART_COLORS[tab.key]}"></span>
+              <span class="mywork-summary-label">${tab.label}</span>
+              <span class="mywork-summary-count">${count}</span>
+              <span class="mywork-summary-percent">${percentage}%</span>
+              <span class="mywork-summary-track"><i style="width:${percentage}%;background:${BUCKET_CHART_COLORS[tab.key]}"></i></span>
+            </div>`;
+          }).join("")}
+        </div>
+      </div>
     </div>
     <div class="tabs" id="mywork-tabs">
       ${TABS.map((t) => `<button type="button" class="tab" data-tab="${t.key}">${t.label} <span class="tab-count">${buckets[t.key].length}</span></button>`).join("")}
@@ -73,16 +95,26 @@ export async function renderMyWork(root: HTMLElement, onOpenTask: (taskId: strin
 
   const bucketCtx = shell.querySelector<HTMLCanvasElement>("#mywork-chart")!;
   bucketChart = new Chart(bucketCtx, {
-    type: "bar",
+    type: "doughnut",
     data: {
       labels: TABS.map((t) => t.label),
-      datasets: [{ data: TABS.map((t) => buckets[t.key].length), backgroundColor: TABS.map((t) => BUCKET_CHART_COLORS[t.key]), borderRadius: 4 }],
+      datasets: [{
+        data: TABS.map((t) => buckets[t.key].length),
+        backgroundColor: TABS.map((t) => BUCKET_CHART_COLORS[t.key]),
+        hoverBackgroundColor: TABS.map((t) => BUCKET_CHART_COLORS[t.key]),
+        borderColor: "#ffffff",
+        borderWidth: 5,
+        borderRadius: 8,
+        hoverOffset: 10,
+      }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+      cutout: "74%",
+      animation: { duration: 850, easing: "easeOutQuart" },
+      interaction: { intersect: false, mode: "index" },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: "#20382e", padding: 12, cornerRadius: 10, displayColors: false } },
     },
   });
 

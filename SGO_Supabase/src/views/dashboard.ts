@@ -58,8 +58,14 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
   }
 
   shell.innerHTML = `
-    <h1 class="dashboard-title">Dashboard</h1>
-    <p class="dashboard-subtitle">Indicadores calculados a partir das tarefas visíveis para você.</p>
+    <section class="dashboard-hero">
+      <div>
+        <span class="eyebrow">Visão operacional</span>
+        <h1 class="dashboard-title">Seu trabalho, em movimento.</h1>
+        <p class="dashboard-subtitle">Uma leitura clara do ritmo da equipe, prazos e decisões que pedem atenção.</p>
+      </div>
+      <div class="hero-orbit" aria-hidden="true"><span></span><span></span><span></span><i></i></div>
+    </section>
 
     <div class="kpi-grid">
       <article class="kpi-tile tile-blue">
@@ -106,12 +112,12 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
     </div>
 
     <div class="dashboard-grid">
-      <div class="card">
-        <h3>Tarefas por status</h3>
+      <div class="card dashboard-card">
+        <div class="card-heading"><div><span class="eyebrow">Distribuição</span><h3>Tarefas por status</h3></div><span class="live-pill"><i></i> Ao vivo</span></div>
         <div class="chart-box chart-box-sm"><canvas id="status-chart"></canvas></div>
       </div>
-      <div class="card">
-        <h3>Atividade recente</h3>
+      <div class="card dashboard-card">
+        <div class="card-heading"><div><span class="eyebrow">Fluxo recente</span><h3>Atividade da equipe</h3></div></div>
         <ul class="activity-list">
           ${
             activity
@@ -129,12 +135,12 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
     </div>
 
     <div class="dashboard-grid" style="margin-top:1rem">
-      <div class="card">
-        <h3>Tarefas concluídas (últimos 14 dias)</h3>
+      <div class="card dashboard-card">
+        <div class="card-heading"><div><span class="eyebrow">Performance</span><h3>Entregas nos últimos 14 dias</h3></div></div>
         <div class="chart-box"><canvas id="trend-chart"></canvas></div>
       </div>
-      <div class="card">
-        <h3>Carga por colaborador</h3>
+      <div class="card dashboard-card">
+        <div class="card-heading"><div><span class="eyebrow">Capacidade</span><h3>Carga por colaborador</h3></div></div>
         <p class="dashboard-subtitle" style="margin-bottom:0.75rem">Esforço das tarefas abertas ÷ capacidade semanal cadastrada.</p>
         <div class="workload-list">
           ${
@@ -168,14 +174,19 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
         {
           data: stats.byStatus.map((s) => s.count),
           backgroundColor: stats.byStatus.map((s) => STATUS_CHART_COLORS[s.status] ?? "#8892a6"),
-          borderWidth: 0,
+          borderWidth: 5,
+          borderColor: "rgba(255,255,255,.88)",
+          hoverOffset: 12,
+          borderRadius: 8,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } },
+      animation: { duration: 1100, easing: "easeOutQuart" },
+      cutout: "68%",
+      plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", padding: 18, boxWidth: 8, font: { size: 11, weight: 600 } } } },
     },
   });
 
@@ -187,19 +198,38 @@ export async function renderDashboard(root: HTMLElement, onOpenTask: (taskId: st
       datasets: [
         {
           data: trend.map((t) => t.count),
-          borderColor: "#1f6b45",
-          backgroundColor: "rgba(31,107,69,0.12)",
+          borderColor: "#1f7a52",
+          backgroundColor: (context) => {
+            const chart = context.chart;
+            const { ctx, chartArea } = chart;
+            if (!chartArea) return "rgba(31,122,82,.12)";
+            const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+            gradient.addColorStop(0, "rgba(31,122,82,.32)");
+            gradient.addColorStop(.58, "rgba(104,190,149,.13)");
+            gradient.addColorStop(1, "rgba(31,122,82,0)");
+            return gradient;
+          },
           fill: true,
-          tension: 0.35,
-          pointRadius: 2,
+          tension: 0.42,
+          borderWidth: 3,
+          pointRadius: 0,
+          pointHoverRadius: 6,
+          pointHoverBackgroundColor: "#ffffff",
+          pointHoverBorderColor: "#1f7a52",
+          pointHoverBorderWidth: 3,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+      animation: { duration: 1300, easing: "easeOutQuart" },
+      interaction: { intersect: false, mode: "index" },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: "#26304a", padding: 12, cornerRadius: 10, displayColors: false } },
+      scales: {
+        x: { grid: { display: false }, border: { display: false }, ticks: { color: "#8b94aa", font: { size: 10 } } },
+        y: { beginAtZero: true, border: { display: false }, grid: { color: "rgba(128,140,170,.12)" }, ticks: { precision: 0, color: "#8b94aa", font: { size: 10 } } },
+      },
     },
   });
 }

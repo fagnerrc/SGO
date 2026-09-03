@@ -410,8 +410,6 @@ async function loadNotifications(root: HTMLElement): Promise<void> {
   });
 }
 
-const SIDEBAR_PRESENCE_LIMIT = 5;
-
 // Fetches once (via the shared 60s cache) and paints the sidebar widget,
 // then keeps it accurate two different ways: a cheap local tick that just
 // re-renders the same already-fetched list (elapsed-time text only
@@ -459,14 +457,9 @@ function renderPresenceWidget(root: HTMLElement, profiles: TeamPresenceRow[]): v
   widget.hidden = false;
   countEl.textContent = String(active.length);
 
-  const shown = active.slice(0, SIDEBAR_PRESENCE_LIMIT);
-  const overflow = active.length - shown.length;
-  listEl.innerHTML =
-    shown.map((p) => `<li class="sidebar-presence-item"><span class="presence-dot presence-dot-ativo"></span>${escapeHtml(p.full_name.split(" ")[0])}</li>`).join("") +
-    (overflow > 0 ? `<li><button type="button" class="sidebar-presence-more" id="sidebar-presence-more">+ ${overflow} ativos</button></li>` : "");
-  root.querySelector("#sidebar-presence-more")?.addEventListener("click", () => {
-    location.hash = "#/presence";
-  });
+  listEl.innerHTML = active
+    .map((p) => `<li class="sidebar-presence-item"><span class="presence-dot presence-dot-ativo"></span>${escapeHtml(p.full_name)}</li>`)
+    .join("");
 
   alertBtn.hidden = inactive2h.length === 0;
   if (inactive2h.length > 0) {

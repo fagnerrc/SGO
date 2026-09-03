@@ -24,7 +24,13 @@ import { renderTeamDetail } from "./views/teamDetail";
 // #/tasks/new, #/tasks/:id, #/kanban, #/approvals, #/admin/collaborators.
 
 export function startApp(root: HTMLElement): void {
-  window.addEventListener("hashchange", () => route(root));
+  window.addEventListener("hashchange", () => {
+    root.classList.remove("route-entering");
+    void root.offsetWidth;
+    root.classList.add("route-entering");
+    route(root);
+  });
+  root.classList.add("route-entering");
   route(root);
 }
 

@@ -91,14 +91,35 @@ export function groupByPriority(tasks: Task[]): { priority: string; count: numbe
 }
 
 export function groupByArea(tasks: Task[]): { area: string; count: number }[] {
-  const map = new Map<string, number>();
+  const map = new Map<string, { label: string; count: number }>();
   for (const t of tasks) {
-    const area = t.area || "Sem área";
-    map.set(area, (map.get(area) ?? 0) + 1);
+    const rawArea = (t.area || "Sem área").trim().replace(/\s+/g, " ");
+    const key = rawArea.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+    const current = map.get(key);
+    if (current) {
+      current.count += 1;
+      // Prefer a naturally-cased label over legacy values stored in ALL CAPS.
+      if (current.label === current.label.toLocaleUpperCase("pt-BR") && rawArea !== rawArea.toLocaleUpperCase("pt-BR")) current.label = rawArea;
+    } else {
+      map.set(key, { label: formatAreaLabel(rawArea), count: 1 });
+    }
   }
-  return Array.from(map.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([area, count]) => ({ area, count }));
+  return Array.from(map.values())
+    .sort((a, b) => b.count - a.count)
+    .map(({ label: area, count }) => ({ area, count }));
+}
+
+function formatAreaLabel(value: string): string {
+  const acronyms = new Set(["rh", "ti", "nf"]);
+  return value
+    .toLocaleLowerCase("pt-BR")
+    .split(/([\s/-]+)/)
+    .map((part) => {
+      if (!part || /^[\s/-]+$/.test(part)) return part;
+      if (acronyms.has(part)) return part.toLocaleUpperCase("pt-BR");
+      return part.charAt(0).toLocaleUpperCase("pt-BR") + part.slice(1);
+    })
+    .join("");
 }
 
 export function formatTrackedTime(ms: number): string {
