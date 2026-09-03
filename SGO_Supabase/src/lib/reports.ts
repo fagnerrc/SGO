@@ -40,6 +40,16 @@ export interface ReportStats {
   trackedCount: number;
 }
 
+// A Tarefa Agendada (routine-generated ones included) never runs a real
+// Cronômetro, so its timer_total_ms sits at 0 — counting that as "0h
+// tracked" understates real effort. Mirrors the same esforço substitution
+// taskDetail.ts and audit.ts already apply for this task type, so the
+// report agrees with what those screens show.
+function effectiveTrackedMs(task: Task): number {
+  if (task.tipo === "Tarefa agendada" && task.estimativa > 0) return task.estimativa * 3600000;
+  return task.timer_total_ms;
+}
+
 export function computeReportStats(tasks: Task[]): ReportStats {
   const now = Date.now();
   let done = 0;
@@ -57,8 +67,9 @@ export function computeReportStats(tasks: Task[]): ReportStats {
       if (!dueAt || !completedAt || completedAt <= dueAt) completedOnTime += 1;
     }
     if (!isTerminal && task.prazo && new Date(task.prazo).getTime() < now) overdue += 1;
-    if (task.timer_total_ms > 0) {
-      trackedTimeMs += task.timer_total_ms;
+    const trackedMs = effectiveTrackedMs(task);
+    if (trackedMs > 0) {
+      trackedTimeMs += trackedMs;
       trackedCount += 1;
     }
   }
@@ -115,7 +126,7 @@ export function tasksToCSV(tasks: Task[], profileById: Map<string, Profile>): st
     t.prazo ?? "",
     t.concluido_em ?? "",
     String(t.estimativa),
-    (t.timer_total_ms / 3600000).toFixed(2),
+    (effectiveTrackedMs(t) / 3600000).toFixed(2),
   ]);
   return [header, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
 }
